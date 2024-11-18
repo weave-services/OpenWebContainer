@@ -3,7 +3,7 @@ import { Process } from "./base";
 /**
  * Process Manager to handle multiple processes
  */
-class ProcessManager {
+export class ProcessManager {
     private processes: Map<number, Process>;
     private nextPid: number;
 

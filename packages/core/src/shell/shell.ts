@@ -1,6 +1,6 @@
 import { IShell, IFileSystem, ShellCommandResult, CommandParsedResult } from '../interfaces';
 
-class Shell implements IShell {
+export class Shell implements IShell {
     private fileSystem: IFileSystem;
     private currentDirectory: string;
     private env: Map<string, string>;
@@ -309,5 +309,3 @@ class Shell implements IShell {
         }
     }
 }
-
-export { Shell };

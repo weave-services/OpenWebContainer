@@ -1,5 +1,3 @@
-import { QuickJSContext, QuickJSRuntime } from "quickjs-emscripten";
-
 /**
  * Process states
  */

@@ -1,48 +1,22 @@
 {
 	"name": "open-web-container",
-	"private": true,
 	"version": "0.1.0",
-	"workspaces": [
-		"packages/*"
-	],
+	"description": "A browser-based virtual container runtime that enables server-like JavaScript execution environments directly in the browser. OpenWebContainer provides a sandboxed environment with a virtual file system, process management, and shell capabilities, making it possible to run server-side JavaScript applications entirely in the browser.",
+	"directories": {
+		"example": "examples",
+		"test": "test"
+	},
 	"scripts": {
-		"build": "turbo run build",
+		"test": "echo \"Error: no test specified\" && exit 1",
 		"dev": "turbo run dev --parallel",
-		"test": "turbo run test",
-		"lint": "turbo run lint",
-		"clean": "turbo run clean && rimraf node_modules",
-		"format": "prettier --write \"**/*.{ts,tsx,md}\"",
-		"prepare": "husky install",
-		"typecheck": "turbo run typecheck",
-		"playground": "turbo run dev --filter=playground",
-		"core:build": "turbo run build --filter=@open-web-container/core",
-		"core:dev": "turbo run dev --filter=@open-web-container/core",
-		"changeset": "changeset",
-		"version-packages": "changeset version",
-		"release": "turbo run build --filter=@open-web-container/core && changeset publish"
+		"build": "turbo run build",
+		"install": "turbo run install",
+		"playground": "turbo run dev --filter='@open-web-container/playground'"
 	},
+	"author": "",
+	"license": "MIT",
 	"devDependencies": {
-		"@changesets/cli": "^2.27.1",
-		"@commitlint/cli": "^18.4.3",
-		"@commitlint/config-conventional": "^18.4.3",
-		"husky": "^8.0.3",
-		"lint-staged": "^15.2.0",
-		"prettier": "^3.1.1",
-		"rimraf": "^5.0.5",
-		"turbo": "^1.11.2",
-		"typescript": "^5.3.3"
+		"turbo": "^2.3.0"
 	},
-	"engines": {
-		"node": ">=16.0.0"
-	},
-	"packageManager": "pnpm@8.9.0",
-	"lint-staged": {
-		"*.{js,jsx,ts,tsx}": [
-			"prettier --write",
-			"eslint --fix"
-		],
-		"*.{json,md,yml}": [
-			"prettier --write"
-		]
-	}
+	"packageManager": "pnpm@8.15.3"
 }

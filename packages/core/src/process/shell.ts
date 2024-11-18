@@ -1,4 +1,4 @@
-import { Shell } from "../core/shell";
+import { Shell } from "../shell/shell";
 import { IFileSystem, ProcessEvent, ProcessState, ProcessType } from "../interfaces";
 import { Process } from "./base";
 
