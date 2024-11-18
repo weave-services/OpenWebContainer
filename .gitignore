@@ -39,6 +39,7 @@ lerna-debug.log*
 
 # Turborepo
 .turbo
+*/**/tsconfig.tsbuildinfo
 
 # Cache
 .cache

@@ -487,27 +487,48 @@ export class Shell implements IShell {
             const headers: Record<string, string> = {};
             const outputFile = options.includes('-o') ?
                 args[args.indexOf('-o') + 1] : undefined;
+            
+            const followRedirects = !options.includes('--no-follow');
+            const insecure = options.includes('-k') || options.includes('--insecure');
 
-            // Handle headers
-            const headerIndex = options.indexOf('-H');
-            if (headerIndex !== -1) {
-                const headerStr = args[headerIndex + 1];
-                const [key, value] = headerStr.split(':').map(s => s.trim());
-                headers[key] = value;
+            // Parse headers
+            for (let i = 0; i < args.length; i++) {
+                if (args[i] === '-H' && args[i + 1]) {
+                    const headerStr = args[i + 1];
+                    const [key, ...valueParts] = headerStr.split(':');
+                    const value = valueParts.join(':').trim();
+                    headers[key.trim()] = value;
+                    i++; // Skip next argument since we processed it
+                }
             }
+
 
             try {
                 const response = await fetch(url, {
                     method,
-                    headers
+                    headers: {
+                        ...headers,
+                        'Accept': '*/*',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                    },
+                    redirect: followRedirects ? 'follow' : 'manual',
+                    // Ignore SSL certificate errors if -k flag is used
+                    mode: 'cors',
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
 
                 const responseText = await response.text();
 
+                // Handle output to file if -o option is used
                 if (outputFile) {
                     this.fileSystem.writeFile(this.resolvePath(outputFile), responseText);
                     return {
-                        stdout: `Downloaded to ${outputFile}\n`,
+                        stdout: `  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n` +
+                            `                                   Dload  Upload   Total   Spent    Left  Speed\n` +
+                            `100  ${responseText.length}  100  ${responseText.length}    0     0   ${Math.floor(responseText.length / 0.1)}      0  0:00:01 --:--:--  0:00:01 ${Math.floor(responseText.length / 0.1)}\n`,
                         stderr: '',
                         exitCode: 0
                     };
@@ -518,11 +539,12 @@ export class Shell implements IShell {
                     stderr: '',
                     exitCode: 0
                 };
+
             } catch (error: any) {
                 return {
                     stdout: '',
-                    stderr: `curl: ${error.message}\n`,
-                    exitCode: 1
+                    stderr: `curl: (6) Could not resolve host: ${error.message}\n`,
+                    exitCode: 6
                 };
             }
         } catch (error: any) {

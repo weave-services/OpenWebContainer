@@ -77,6 +77,14 @@ export class ShellProcess extends Process {
     }
 
     private async handleInput(input: string): Promise<void> {
+
+        // Detect paste by checking if input is multiple characters 
+        // and doesn't start with an escape sequence
+        if (input.length > 1 && !input.startsWith('\x1b')) {
+            await this.handlePaste(input);
+            return;
+        }
+
         switch (input) {
             case '\r': // Enter
                 await this.handleEnterKey();
@@ -118,7 +126,43 @@ export class ShellProcess extends Process {
                 break;
         }
     }
+    private async handlePaste(pastedText: string): Promise<void> {
+        // Split the pasted text by lines
+        const lines = pastedText.split(/\r?\n/);
 
+        // Handle first line - insert at cursor position
+        const firstLine = lines[0];
+        const before = this.currentLine.slice(0, this.cursorPosition);
+        const after = this.currentLine.slice(this.cursorPosition);
+
+        this.currentLine = before + firstLine + after;
+        this.cursorPosition += firstLine.length;
+
+        // Update display for first line
+        this.emitOutput(firstLine);
+        if (after) {
+            // Redraw rest of the line
+            this.emitOutput(after);
+            // Move cursor back to position
+            this.emitOutput(`\x1b[${after.length}D`);
+        }
+
+        // If there are multiple lines, handle them one by one
+        if (lines.length > 1) {
+            for (let i = 1; i < lines.length; i++) {
+                // Execute current line
+                await this.handleEnterKey();
+
+                // Handle next line
+                const line = lines[i];
+                if (line.length > 0) {
+                    this.currentLine = line;
+                    this.cursorPosition = line.length;
+                    this.emitOutput(line);
+                }
+            }
+        }
+    }
     private async handleEnterKey(): Promise<void> {
         this.emitOutput('\n');
 

@@ -49,11 +49,25 @@ export default function Terminal({ onCommand, output }: TerminalProps) {
 					onCommand("\b");
 					break;
 				default:
-					if (!domEvent.ctrlKey && !domEvent.altKey && key.length === 1) {
+					if (!domEvent.ctrlKey && !domEvent.altKey&& key.length === 1) {
 						onCommand(key);
 					}
 					break;
 			}
+		});
+		terminalRef.current?.addEventListener("paste", (event) => {
+			const text = event.clipboardData?.getData("text");
+			if (text) {
+				onCommand(text);
+			}
+		});
+		term.attachCustomKeyEventHandler((arg) => {
+			if ((arg.ctrlKey||arg.metaKey) && arg.code === "KeyV" && arg.type === "keydown") {
+				navigator.clipboard.readText().then((text) => {
+					onCommand(text);
+				});
+			}
+			return true;
 		});
 
 		xtermRef.current = term;
