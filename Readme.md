@@ -72,7 +72,7 @@ open-web-container/
 
 ```bash
 # Clone the repository
-git clone https://github.com/thecodacus/open-web-container.git
+git clone https://github.com/thecodacus/OpenWebContainer.git
 cd open-web-container
 
 # Install dependencies
