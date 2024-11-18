@@ -35,19 +35,27 @@ A browser-based virtual container runtime that enables server-like JavaScript ex
 
 ```bash
 open-web-container/
+.
 ├── apps/                      # Application packages
 │   └── playground/           # Web-based playground
 │       ├── src/             
 │       │   ├── components/   # React components
+│       │   │   ├── Editor/
+│       │   │   ├── FileExplorer/
+│       │   │   └── Terminal/
 │       │   ├── hooks/       # React hooks
 │       │   └── ...
 │       └── ...
+
 ├── packages/                  # Core packages
 │   └── core/                # Main container implementation
 │       ├── src/
 │       │   ├── filesystem/  # Virtual filesystem implementation
 │       │   ├── interfaces/  # TypeScript interfaces
 │       │   ├── process/    # Process management
+│       │   │   ├── base/
+│       │   │   ├── executors/
+│       │   │   └── manager/
 │       │   └── shell/      # Shell implementation
 │       └── ...
 └── ...
@@ -64,7 +72,7 @@ open-web-container/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/open-web-container.git
+git clone https://github.com/thecodacus/open-web-container.git
 cd open-web-container
 
 # Install dependencies
@@ -101,7 +109,7 @@ async function main() {
   });
 
   // Run a JavaScript file
-  const jsProcess = await container.spawn('/app/hello.js');
+  const jsProcess = await container.spawn('node', '/app/hello.js');
   
   // Clean up when done
   await container.dispose();
@@ -130,10 +138,10 @@ container.deleteFile('/app/script.js');
 
 ```typescript
 // Spawn a shell process
-const shell = await container.spawn('sh', ['ls', '-l']);
+const shell = await container.spawn('sh', ['ls']);
 
 // Spawn a JavaScript process
-const process = await container.spawn('/app/script.js');
+const process = await container.spawn('node', '/app/script.js');
 
 // Process events
 process.addEventListener('start', (data) => { /* ... */ });

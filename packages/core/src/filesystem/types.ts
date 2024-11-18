@@ -6,6 +6,8 @@ export interface IFileSystem {
     readFile(path: string): string | undefined;
     deleteFile(path: string, recursive?: boolean): void;
     listFiles(): string[];
+    resolvePath(path: string, basePath?: string): string;
+    fileExists(path: string): boolean;
     resolveModulePath(specifier: string, basePath?: string): string;
     createDirectory(path: string): void;
     deleteDirectory(path: string): void;

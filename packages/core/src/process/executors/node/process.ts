@@ -93,9 +93,14 @@ export class NodeProcess extends Process {
 
             try {
                 // Get the file content
-                const content = this.fileSystem.readFile(this.executablePath);
+                let content = this.fileSystem.readFile(this.executablePath);
                 if (!content) {
                     throw new Error(`File not found: ${this.executablePath}`);
+                }
+                let firstLine = content.split('\n')[0];
+                // Remove shebang if present
+                if (firstLine.startsWith('#!')) {
+                    content = content.split('\n').slice(1).join('\n');
                 }
 
                 // Execute the code

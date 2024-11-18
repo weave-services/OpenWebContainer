@@ -70,7 +70,7 @@ export class VirtualFileSystem implements IFileSystem {
         // Add files
         for (const file of this.files.keys()) {
             if (file.startsWith(normalizedPath)) {
-                const relativePath = file.slice(normalizedPath.length + 1);
+                const relativePath = file.slice(normalizedPath.length);
                 const topLevel = relativePath.split('/')[0];
                 if (topLevel) {
                     entries.add(topLevel);
@@ -110,6 +110,19 @@ export class VirtualFileSystem implements IFileSystem {
 
     listFiles(): string[] {
         return Array.from(this.files.keys());
+    }
+
+    resolvePath(path: string, basePath: string = ''): string {
+        const normalizedPath = this.normalizePath(path);
+        const normalizedBasePath = this.normalizePath(basePath);
+        if (normalizedPath.startsWith('/')) {
+            return normalizedPath;
+        }
+        return normalizedBasePath + '/' + normalizedPath;
+    }
+    fileExists(path: string): boolean {
+        const normalizedPath = this.normalizePath(path);
+        return this.files.has(normalizedPath);
     }
 
     resolveModulePath(specifier: string, basePath: string = ''): string {
