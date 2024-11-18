@@ -1,6 +1,6 @@
 import { Process } from '../../base/process';
 import { Shell } from '../../../shell';
-import { ProcessState, ProcessType } from '../../base';
+import { ProcessEvent, ProcessState, ProcessType } from '../../base';
 import { IFileSystem } from '../../../filesystem';
 import { ShellCommandResult } from '../../../shell';
 
@@ -22,16 +22,19 @@ export class ShellProcess extends Process {
     private cursorPosition: number = 0;
     private lineBuffer: string[] = [];
 
+    private fileSystem: IFileSystem;
+
     constructor(
         pid: number,
         executablePath: string,
         args: string[],
         fileSystem: IFileSystem,
         parentPid?: number,
-        cwd?: string
+        cwd?: string,
+        env?: Map<string, string>
     ) {
-        super(pid, ProcessType.SHELL, executablePath, args, parentPid,cwd);
-
+        super(pid, ProcessType.SHELL, executablePath, args, parentPid,cwd,env);
+        this.fileSystem = fileSystem;
         const oscMode = args.includes('--osc');
         this.filteredArgs = args.filter(arg => arg !== '--osc');
 
@@ -245,6 +248,7 @@ export class ShellProcess extends Process {
         const args = commandLine.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
         const processedArgs = args.map(arg => arg.replace(/^["'](.+)["']$/, '$1'));
 
+
         if (processedArgs.length === 0) {
             return { stdout: '', stderr: '', exitCode: 0 };
         }
@@ -268,6 +272,39 @@ export class ShellProcess extends Process {
             default:
                 // Try to execute as a program
                 try {
+                    if(this.shell.hasCommand(command)) {
+                        return await this.shell.execute(command, cmdArgs);
+                    }
+                    else{
+                        // check if the command is in env PATH
+                        let PATH= this.env.get('PATH');
+                        if (PATH) {
+                            const paths = PATH.split(':');
+                            for (const path of paths) {
+                                const executablePath = this.fileSystem.resolvePath(command,path);
+                                if (this.fileSystem.fileExists(executablePath)) {
+                                    return await this.spawnChild(executablePath, cmdArgs);
+                                }
+                            }
+                        }
+                        // check for shebang
+                        let content = this.fileSystem.readFile(command);
+                        if (content) {
+                            const shebang = content.match(/^#!(.*)/);
+                            if (shebang) {
+                                const interpreterName = shebang[1];
+                                let name = interpreterName.split(" ")[0]
+                                if (name=='/usr/bin/env'){
+                                    let tokens = interpreterName.split(" ")
+                                    if (tokens.length==1)
+                                        throw "executor not specified"
+                                    let newCommand=tokens[1]
+                                    return await this.spawnChild(newCommand, [command, ...cmdArgs]);
+                                }
+                            }
+                        }
+                    }
+
                     if (command.endsWith('.js') || command === 'node') {
                         const result = await this.spawnChild(command, cmdArgs);
                         return result;

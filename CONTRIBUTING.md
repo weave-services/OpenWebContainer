@@ -21,19 +21,27 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 ```bash
 open-web-container/
+.
 ├── apps/                      # Application packages
 │   └── playground/           # Web-based playground
 │       ├── src/             
 │       │   ├── components/   # React components
+│       │   │   ├── Editor/
+│       │   │   ├── FileExplorer/
+│       │   │   └── Terminal/
 │       │   ├── hooks/       # React hooks
 │       │   └── ...
 │       └── ...
+
 ├── packages/                  # Core packages
 │   └── core/                # Main container implementation
 │       ├── src/
 │       │   ├── filesystem/  # Virtual filesystem implementation
 │       │   ├── interfaces/  # TypeScript interfaces
 │       │   ├── process/    # Process management
+│       │   │   ├── base/
+│       │   │   ├── executors/
+│       │   │   └── manager/
 │       │   └── shell/      # Shell implementation
 │       └── ...
 └── ...
@@ -61,8 +69,8 @@ open-web-container/
 2. **Initial Setup**
    ```bash
    # Clone the repository
-   git clone https://github.com/yourusername/open-web-container.git
-   cd open-web-container
+   git clone https://github.com/thecodacus/OpenWebContainer.git
+   cd OpenWebContainer
 
    # Install dependencies
    pnpm install

@@ -22,6 +22,7 @@ export abstract class Process extends BrowserEventEmitter {
     readonly type: ProcessType;
     protected _state: ProcessState;
     protected _exitCode: number | null;
+    protected env: Map<string, string> = new Map();
     readonly executablePath: string;
     readonly args: string[];
     readonly parentPid?: number|undefined;
@@ -39,7 +40,8 @@ export abstract class Process extends BrowserEventEmitter {
         executablePath: string,
         args: string[] = [],
         parentPid?: number,
-        cwd?: string
+        cwd?: string,
+        env?: Map<string, string>
     ) {
         super();
         this.pid = pid;
@@ -50,6 +52,12 @@ export abstract class Process extends BrowserEventEmitter {
         this.args = args;
         this.parentPid = parentPid;
         this.cwd = cwd||'/';
+        this.env = env || new Map([
+            ['PATH', '/bin:/usr/bin'],
+            ['HOME', '/home'],
+            ['PWD', cwd||'/'],
+        ]);
+
 
         // Set max listeners to avoid memory leaks
         this.setMaxListeners(100);

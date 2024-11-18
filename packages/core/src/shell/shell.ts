@@ -2,6 +2,7 @@ import { IFileSystem } from '../filesystem';
 import { IShell, ShellCommandResult, CommandParsedResult } from './types';
 interface ShellOptions {
     oscMode?: boolean;
+    env?: Map<string, string>;
 }
 
 
@@ -12,16 +13,32 @@ export class Shell implements IShell {
     private commandHistory: string[] = [];
     private historyIndex: number = -1;
     private oscMode: boolean = false;
+    private buildInCommands: Map<string, (args: string[])=> Promise<ShellCommandResult>>= new Map();
 
     constructor(fileSystem: IFileSystem, options: ShellOptions) {
         this.fileSystem = fileSystem;
         this.currentDirectory = '/';
-        this.env = new Map([
+        this.env = options.env || new Map([
             ['PATH', '/bin:/usr/bin'],
             ['HOME', '/home'],
             ['PWD', this.currentDirectory],
         ]);
         this.oscMode = options.oscMode || false;
+        this.registerAllBuiltInCommands()
+    }
+    private registerBuiltInCommand(name: string, command: (args: string[]) => Promise<ShellCommandResult>) {
+        this.buildInCommands.set(name, command);
+    }
+    private registerAllBuiltInCommands() {
+        this.registerBuiltInCommand('cd', this.cd.bind(this));
+        this.registerBuiltInCommand('ls', this.ls.bind(this));
+        this.registerBuiltInCommand('pwd', this.pwd.bind(this));
+        this.registerBuiltInCommand('cat', this.cat.bind(this));
+        this.registerBuiltInCommand('echo', this.echo.bind(this));
+        this.registerBuiltInCommand('mkdir', this.mkdir.bind(this));
+        this.registerBuiltInCommand('rm', this.rm.bind(this));
+        this.registerBuiltInCommand('rmdir', this.rmdir.bind(this));
+        this.registerBuiltInCommand('touch', this.touch.bind(this));
     }
 
     private formatOscOutput(type: string, content: string): string {
@@ -121,6 +138,7 @@ export class Shell implements IShell {
                 return output;
         }
     }
+
     // Add these new methods for history management
     getNextCommand(): string {
         if (this.historyIndex < this.commandHistory.length - 1) {
@@ -159,6 +177,9 @@ export class Shell implements IShell {
         }
         this.currentDirectory = resolvedPath;
         this.env.set('PWD', resolvedPath);
+    }
+    hasCommand(command: string): boolean {
+        return this.buildInCommands.has(command);
     }
 
     private resolvePath(path: string): string {
@@ -446,14 +467,40 @@ export class Shell implements IShell {
     }
 
     private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
-        // Handle node command specially
-        if (command === 'node') {
-            if (args.length === 0) {
-                return this.failure('No JavaScript file specified');
-            }
-            // return this.executeJavaScriptProcess(args[0], args.slice(1));
+        // // Handle node command specially
+        // if (command === 'node') {
+        //     if (args.length === 0) {
+        //         return this.failure('No JavaScript file specified');
+        //     }
+        //     // return this.executeJavaScriptProcess(args[0], args.slice(1));
+        // }
+        // check if the command is a built-in command
+        if (this.buildInCommands.has(command)) {
+            return this.buildInCommands.get(command)!(args);
         }
+        // // check if the command is in env PATH
+        // let PATH= this.env.get('PATH');
+        // if (PATH) {
+        //     const paths = PATH.split(':');
+        //     for (const path of paths) {
+        //         const executablePath = this.fileSystem.resolvePath(command,path);
+        //         if (this.fileSystem.fileExists(executablePath)) {
+        //             return new Promise((resolve) => {
+        //                 this.emit(ProcessEvent.SPAWN_CHILD, {
+        //                     payload: {
+        //                         executable: interpreterName,
+        //                         args,
+        //                         cwd: this.cwd
+        //                     },
+        //                     callback: resolve
+        //                 });
+        //             });
+        //         }
+        //     }
+        // }
+        // // check for shebang
 
+        
         // Handle built-in commands as before
         return this.executeBuiltin(command, args);
     }
