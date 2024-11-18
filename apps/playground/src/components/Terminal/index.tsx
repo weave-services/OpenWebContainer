@@ -1,16 +1,17 @@
 import { useEffect, useRef } from "react";
-import { Terminal as XTerm} from "@xterm/xterm";
+import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
-	onCommand: (command: string) => Promise<void>;
+	onCommand: (input: string) => Promise<void>;
 	output: string[];
 }
 
 export default function Terminal({ onCommand, output }: TerminalProps) {
 	const terminalRef = useRef<HTMLDivElement>(null);
 	const xtermRef = useRef<XTerm>();
+	const lastOutputLengthRef = useRef(0);
 
 	useEffect(() => {
 		if (!terminalRef.current) return;
@@ -22,6 +23,8 @@ export default function Terminal({ onCommand, output }: TerminalProps) {
 			theme: {
 				background: "#1e1e1e",
 			},
+			convertEol: true,
+			allowTransparency: true,
 		});
 
 		const fitAddon = new FitAddon();
@@ -30,40 +33,52 @@ export default function Terminal({ onCommand, output }: TerminalProps) {
 		term.open(terminalRef.current);
 		fitAddon.fit();
 
-		let currentLine = "";
-
 		term.onKey(({ key, domEvent }) => {
-			const char = key;
-
-			if (domEvent.keyCode === 13) {
-				// Enter
-				term.write("\r\n");
-				onCommand(currentLine);
-				currentLine = "";
-			} else if (domEvent.keyCode === 8) {
-				// Backspace
-				if (currentLine.length > 0) {
-					currentLine = currentLine.slice(0, -1);
-					term.write("\b \b");
-				}
-			} else {
-				currentLine += char;
-				term.write(char);
+			// Pass raw input to the process
+			switch (domEvent.keyCode) {
+				case 38: // Up arrow
+					onCommand("\x1b[A");
+					break;
+				case 40: // Down arrow
+					onCommand("\x1b[B");
+					break;
+				case 13: // Enter
+					onCommand("\r");
+					break;
+				case 8: // Backspace
+					onCommand("\b");
+					break;
+				default:
+					if (!domEvent.ctrlKey && !domEvent.altKey && key.length === 1) {
+						onCommand(key);
+					}
+					break;
 			}
 		});
 
 		xtermRef.current = term;
 
+		const handleResize = () => {
+			fitAddon.fit();
+		};
+		window.addEventListener("resize", handleResize);
+
 		return () => {
+			window.removeEventListener("resize", handleResize);
 			term.dispose();
 		};
-	}, [terminalRef, terminalRef.current]);
+	}, [terminalRef.current]);
 
 	useEffect(() => {
 		if (!xtermRef.current) return;
 
-		output.forEach((line) => {
-			xtermRef.current?.writeln(line);
+		const newOutput = output.slice(lastOutputLengthRef.current);
+		lastOutputLengthRef.current = output.length;
+
+		newOutput.forEach((line) => {
+			if (line.length > 0) {
+				xtermRef.current?.write(line);
+			}
 		});
 	}, [output]);
 

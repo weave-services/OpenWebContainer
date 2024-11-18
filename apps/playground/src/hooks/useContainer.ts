@@ -1,55 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
-import { OpenWebContainer, ShellProcess, ProcessEvent } from '@open-web-container/core';
+import { OpenWebContainer } from '@open-web-container/core';
+
 
 export function useContainer() {
-    const containerRef = useRef<OpenWebContainer>();
-    const shellRef = useRef<ShellProcess>();
+    const containerRef = useRef<OpenWebContainer | null>(null);
     const [ready, setReady] = useState(false);
     const [output, setOutput] = useState<string[]>([]);
 
     useEffect(() => {
-        async function initContainer() {
-            const container = new OpenWebContainer();
-            containerRef.current = container;
-
-            // Create a shell process
-            const shell = await container.spawn('sh') as ShellProcess;
-            shellRef.current = shell;
-
-            // Listen for shell output
-            shell.addEventListener(ProcessEvent.MESSAGE, ({ stdout, stderr }) => {
-                if (stdout) {
-                    setOutput(prev => [...prev, stdout]);
-                }
-                if (stderr) {
-                    setOutput(prev => [...prev, `Error: ${stderr}`]);
-                }
-            });
-
-            setReady(true);
-        }
-
-        initContainer();
+        containerRef.current = new OpenWebContainer();
+        setReady(true);
 
         return () => {
             containerRef.current?.dispose();
         };
     }, []);
 
-    const executeCommand = async (command: string) => {
-        if (!shellRef.current) return;
-        await shellRef.current.executeCommand(command);
-    };
+    // Set up output handling
+    useEffect(() => {
+        if (!containerRef.current) return;
 
-    const writeFile = (path: string, content: string) => {
-        containerRef.current?.writeFile(path, content);
-    };
+        const unsubscribe = containerRef.current.onOutput((newOutput) => {
+            setOutput(prev => [...prev, newOutput]);
+        });
+
+        return unsubscribe;
+    }, [containerRef.current]);
 
     return {
         ready,
         output,
-        executeCommand,
-        writeFile,
-        container: containerRef.current
+        container: containerRef.current,    
     };
 }

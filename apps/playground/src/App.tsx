@@ -7,9 +7,20 @@ import "allotment/dist/style.css";
 import { FileExplorer } from "./components/FileExplorer";
 import { useFileTree } from "./hooks/useFileTree";
 import { FolderOpen, Terminal as TerminalIcon, Code, Loader2, Save } from "lucide-react";
+import { useShell } from "./hooks/useShell";
 
 export default function App() {
-	const { ready, output, container, executeCommand, writeFile } = useContainer();
+	const { ready: containerReady, container } = useContainer();
+  const {
+		ready: shellReady,
+		output,
+		sendCommand,
+		shell,
+  } = useShell(container, {
+		osc: true,
+  });
+
+
 	const fileTree = useFileTree(container?.listFiles() || []);
 	const [currentFile, setCurrentFile] = useState("");
 	const [fileContent, setFileContent] = useState("");
@@ -23,12 +34,13 @@ export default function App() {
 		setIsDirty(value !== fileContent);
 	};
 
+
 	const handleSave = useCallback(async () => {
 		if (!currentFile || !isDirty) return;
 
 		setIsSaving(true);
 		try {
-			writeFile(currentFile, currentEditorContent);
+			container?.writeFile(currentFile, currentEditorContent);
 			setFileContent(currentEditorContent);
 			setIsDirty(false);
 
@@ -40,7 +52,7 @@ export default function App() {
 			console.error("Failed to save:", error);
 			setIsSaving(false);
 		}
-	}, [currentFile, currentEditorContent, isDirty, writeFile]);
+	}, [currentFile, currentEditorContent, isDirty]);
 
 	// Add keyboard shortcut for save
 	const handleKeyPress = useCallback(
@@ -99,7 +111,7 @@ export default function App() {
 		}
 	};
 
-	if (!ready) {
+	if (!containerReady||!shellReady) {
 		return (
 			<div className="h-screen w-screen flex items-center justify-center bg-gray-900">
 				<div className="text-center space-y-4">
@@ -208,7 +220,7 @@ export default function App() {
 									<TerminalIcon className="h-4 w-4 text-blue-400" />
 									<h3 className="text-sm font-medium text-gray-300">Terminal</h3>
 								</div>
-								<Terminal onCommand={executeCommand} output={output} />
+								<Terminal onCommand={sendCommand} output={output} />
 							</div>
 						</Allotment.Pane>
 					</Allotment>

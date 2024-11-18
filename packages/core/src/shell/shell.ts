@@ -1,11 +1,20 @@
+import { getQuickJS } from 'quickjs-emscripten';
 import { IShell, IFileSystem, ShellCommandResult, CommandParsedResult } from '../interfaces';
+interface ShellOptions {
+    oscMode?: boolean;
+}
+
 
 export class Shell implements IShell {
     private fileSystem: IFileSystem;
     private currentDirectory: string;
     private env: Map<string, string>;
+    private commandHistory: string[] = [];
+    private historyIndex: number = -1;
+    private oscMode: boolean = false;
+    private quickJSPromise = getQuickJS();
 
-    constructor(fileSystem: IFileSystem) {
+    constructor(fileSystem: IFileSystem, options: ShellOptions = {}) {
         this.fileSystem = fileSystem;
         this.currentDirectory = '/';
         this.env = new Map([
@@ -13,8 +22,132 @@ export class Shell implements IShell {
             ['HOME', '/home'],
             ['PWD', this.currentDirectory],
         ]);
+        this.oscMode = options.oscMode || false;
+    }
+    private formatOscOutput(type: string, content: string): string {
+        if (!this.oscMode) return content;
+
+        switch (type) {
+            case 'file':
+                return `\x1b[34m${content}\x1b[0m`;
+            case 'directory':
+                return `\x1b[1;34m${content}/\x1b[0m`;
+            case 'executable':
+                return `\x1b[32m${content}*\x1b[0m`;
+            case 'error':
+                return `\x1b[31m${content}\x1b[0m`;
+            case 'success':
+                return `\x1b[32m${content}\x1b[0m`;
+            case 'info':
+                return `\x1b[90m${content}\x1b[0m`;
+            case 'warning':
+                return `\x1b[33m${content}\x1b[0m`;
+            case 'path':
+                return `\x1b[36m${content}\x1b[0m`;
+            case 'command':
+                return `\x1b[1;35m${content}\x1b[0m`;
+            default:
+                return content;
+        }
     }
 
+    private getFileType(path: string): string {
+        try {
+            if (this.fileSystem.isDirectory(path)) {
+                return 'directory';
+            }
+            if (path.endsWith('.js')) {
+                return 'executable';
+            }
+            return 'file';
+        } catch {
+            return 'file';
+        }
+    }
+
+    private success(stdout: string = '', type: string = 'success'): ShellCommandResult {
+        return {
+            stdout: this.oscMode ? this.formatOscOutput(type, stdout) : stdout,
+            stderr: '',
+            exitCode: 0
+        };
+    }
+
+    private failure(stderr: string): ShellCommandResult {
+        return {
+            stdout: '',
+            stderr: this.oscMode ? this.formatOscOutput('error', stderr) : stderr,
+            exitCode: 1
+        };
+    }
+
+    private formatCommandOutput(command: string, output: string): string {
+        if (!this.oscMode) return output;
+
+        // Format specific command outputs
+        switch (command) {
+            case 'ls':
+                return output.split('\n').map(entry => {
+                    if (!entry.trim()) return entry;
+                    const type = this.getFileType(this.resolvePath(entry));
+                    return this.formatOscOutput(type, entry);
+                }).join('\n');
+
+            case 'pwd':
+                return this.formatOscOutput('path', output);
+
+            case 'echo':
+                return this.formatOscOutput('info', output);
+
+            case 'cat':
+                // Attempt to detect and color code content
+                if (output.startsWith('{') || output.startsWith('[')) {
+                    try {
+                        JSON.parse(output);
+                        return this.formatOscOutput('info', output);
+                    } catch { }
+                }
+                return output;
+
+            case 'mkdir':
+            case 'touch':
+            case 'rm':
+            case 'rmdir':
+            case 'cp':
+            case 'mv':
+                return this.formatOscOutput('success', output);
+
+            default:
+                return output;
+        }
+    }
+    // Add these new methods for history management
+    getNextCommand(): string {
+        if (this.historyIndex < this.commandHistory.length - 1) {
+            this.historyIndex++;
+            return this.commandHistory[this.historyIndex];
+        }
+        this.historyIndex = this.commandHistory.length;
+        return '';
+    }
+
+    getPreviousCommand(): string {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            return this.commandHistory[this.historyIndex];
+        } else if (this.historyIndex === 0) {
+            return this.commandHistory[0];
+        }
+        return '';
+    }
+
+    getCurrentHistoryIndex(): number {
+        return this.historyIndex;
+    }
+
+    getHistoryLength(): number {
+        return this.commandHistory.length;
+    }
     getWorkingDirectory(): string {
         return this.currentDirectory;
     }
@@ -87,53 +220,68 @@ export class Shell implements IShell {
         }
     }
 
+    // Modified execute method to include history
     async execute(command: string, args: string[]): Promise<ShellCommandResult> {
         try {
-            // Handle empty command
             if (!command) {
                 return this.success();
             }
+            this.commandHistory.push(command);
 
             // Parse command and redirections
             const parsedCommand = this.parseCommand([command, ...args]);
 
             // Execute the actual command
-            const result = await this.executeBuiltin(
+            const result = await this.executeCommand(
                 parsedCommand.command,
                 parsedCommand.args
             );
+            
 
-            // Handle redirections if command was successful
+            // Handle redirections
             if (result.exitCode === 0 && parsedCommand.redirects.length > 0) {
                 try {
                     this.handleRedirection(result.stdout, parsedCommand.redirects);
-                    // Clear stdout since it was redirected
                     result.stdout = '';
                 } catch (error: any) {
-                    return {
+                    let ret = {
                         stdout: '',
                         stderr: error.message,
                         exitCode: 1
                     };
+                    if (this.oscMode && ret.stderr) {
+                        ret.stderr = this.formatOscOutput('error', ret.stderr);
+                    }
+                    return ret;
                 }
+            }
+
+            // Format output
+            if (result.exitCode === 0 && result.stdout) {
+                result.stdout = this.formatCommandOutput(command, result.stdout);
+            }
+            if (this.oscMode && result.stderr) {
+                result.stderr = this.formatOscOutput('error', result.stderr);
             }
 
             return result;
         } catch (error: any) {
-            return {
-                stdout: '',
-                stderr: error.message,
-                exitCode: 1
-            };
+            return this.failure(error.message);
         }
     }
 
-    private success(stdout: string = ''): ShellCommandResult {
-        return { stdout, stderr: '', exitCode: 0 };
-    }
 
-    private failure(stderr: string): ShellCommandResult {
-        return { stdout: '', stderr, exitCode: 1 };
+    private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
+        // Handle node command specially
+        if (command === 'node') {
+            if (args.length === 0) {
+                return this.failure('No JavaScript file specified');
+            }
+            return this.node(args[0], args.slice(1));
+        }
+
+        // Handle built-in commands as before
+        return this.executeBuiltin(command, args);
     }
 
     private async executeBuiltin(command: string, args: string[]): Promise<ShellCommandResult> {
@@ -177,6 +325,8 @@ export class Shell implements IShell {
             const path = args[0] || this.currentDirectory;
             const resolvedPath = this.resolvePath(path);
             const entries = this.fileSystem.listDirectory(resolvedPath);
+            console.log(entries);
+            
             return this.success(entries.join('\n'));
         } catch (error: any) {
             return this.failure(error.message);
@@ -306,6 +456,78 @@ export class Shell implements IShell {
             return this.success();
         } catch (error: any) {
             return this.failure(error.message);
+        }
+    }
+
+    // execute node command
+    private async node(jsFile:string,args: string[] = []): Promise<ShellCommandResult> {
+        try {
+            const resolvedPath = this.resolvePath(jsFile);
+            const content = this.fileSystem.readFile(resolvedPath);
+
+            if (content === undefined) {
+                return this.failure(`File not found: ${jsFile}`);
+            }
+
+            const QuickJS = await this.quickJSPromise;
+            const runtime = QuickJS.newRuntime();
+            const context = runtime.newContext();
+
+            // Set up module loader for the runtime
+            runtime.setModuleLoader((moduleName, ctx) => {
+                try {
+                    // Resolve module path relative to the current file
+                    const resolvedModulePath = this.fileSystem.resolveModulePath(moduleName, resolvedPath);
+                    const moduleContent = this.fileSystem.readFile(resolvedModulePath);
+
+                    if (moduleContent === undefined) {
+                        return { error: new Error(`Module not found: ${moduleName}`) };
+                    }
+
+                    return { value: moduleContent };
+                } catch (error: any) {
+                    return { error };
+                }
+            });
+
+            // Set up process.argv
+            const processHandle = context.newObject();
+            const argvHandle = context.newArray();
+
+            // Add default node argv items plus user args
+            const fullArgs = ['node', jsFile, ...args];
+            for (let i = 0; i < fullArgs.length; i++) {
+                const argHandle = context.newString(fullArgs[i]);
+                context.setProp(argvHandle, i, argHandle);
+                argHandle.dispose();
+            }
+
+            context.setProp(processHandle, 'argv', argvHandle);
+            context.setProp(context.global, 'process', processHandle);
+
+            argvHandle.dispose();
+            processHandle.dispose();
+
+            // Execute the file
+            const result = await context.evalCode(content, resolvedPath, { type: 'module' });
+
+            // Check for errors
+            if (result.error) {
+                const error = context.dump(result.error);
+                result.error.dispose();
+                context.dispose();
+                runtime.dispose();
+                return this.failure(`JavaScript execution error: ${error}`);
+            }
+
+            // Clean up
+            result.value.dispose();
+            context.dispose();
+            runtime.dispose();
+
+            return this.success();
+        } catch (error: any) {
+            return this.failure(`Failed to execute JavaScript: ${error.message}`);
         }
     }
 }

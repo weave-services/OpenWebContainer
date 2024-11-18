@@ -1,8 +1,17 @@
 import { getQuickJS, JSModuleLoadResult, QuickJSContext } from "quickjs-emscripten";
 import { Process, ShellProcess, JavaScriptProcess } from "./process";
 import { VirtualFileSystem } from "./filesystem/virtual-fs";
-import { IFileSystem } from "./interfaces";
+import { IFileSystem, ProcessEvent } from "./interfaces";
 import { ProcessManager } from "./process/manager";
+
+
+interface ProcessEventData {
+    stdout?: string;
+    stderr?: string;
+    error?: Error;
+    pid?: number;
+    exitCode?: number;
+}
 
 /**
  * Main OpenWebContainer class
@@ -10,6 +19,8 @@ import { ProcessManager } from "./process/manager";
 export class OpenWebContainer {
     private fileSystem: IFileSystem;
     private processManager: ProcessManager;
+    private outputCallbacks: ((output: string) => void)[] = [];
+    private currentProcess: Process | null = null;
 
     constructor() {
         this.fileSystem = new VirtualFileSystem();
@@ -115,12 +126,74 @@ export class OpenWebContainer {
             throw new Error(`Unsupported executable type: ${executablePath}`);
         }
 
+        // Set up process event handlers
+        this.setupProcessEventHandlers(process);
+
+        // Add process to manager
         this.processManager.addProcess(process);
-        process.start().catch((error:any) => {
+        this.currentProcess = process;
+
+        // Start the process
+        process.start().catch((error) => {
             console.error(`Process ${process.pid} failed:`, error);
         });
 
         return process;
+    }
+    private setupProcessEventHandlers(process: Process): void {
+        process.addEventListener(ProcessEvent.MESSAGE, (data: ProcessEventData) => {
+            if (data.stdout) {
+                this.notifyOutput(data.stdout);
+            }
+            if (data.stderr) {
+                this.notifyOutput(data.stderr);
+            }
+        });
+
+        process.addEventListener(ProcessEvent.ERROR, (data: ProcessEventData) => {
+            if (data.error) {
+                this.notifyOutput(`Error: ${data.error.message}\n`);
+            }
+        });
+
+        process.addEventListener(ProcessEvent.EXIT, (data: ProcessEventData) => {
+            if (data.exitCode) {
+                this.notifyOutput(`Process exited with code: ${data.exitCode}\n`);
+            }
+            if (this.currentProcess === process) {
+                this.currentProcess = null;
+            }
+        });
+    }
+
+    /**
+     * Send input to the current process
+     */
+    async sendInput(input: string): Promise<void> {
+        if (!this.currentProcess) {
+            throw new Error('No active process to receive input');
+        }
+
+        try {
+            this.currentProcess.writeInput(input);
+        } catch (error: any) {
+            console.error('Failed to send input:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Register an output callback
+     */
+    onOutput(callback: (output: string) => void): () => void {
+        this.outputCallbacks.push(callback);
+        return () => {
+            this.outputCallbacks = this.outputCallbacks.filter(cb => cb !== callback);
+        };
+    }
+
+    private notifyOutput(output: string): void {
+        this.outputCallbacks.forEach(callback => callback(output));
     }
 
     getProcess(pid: number): Process | undefined {

@@ -12,6 +12,8 @@ export abstract class Process {
     readonly args: string[];
 
     private eventListeners: Map<ProcessEvent, Set<(data: any) => void>>;
+    private inputBuffer: string[] = [];
+    private inputCallbacks: ((input: string) => void)[] = [];
 
     constructor(
         pid: number,
@@ -27,7 +29,6 @@ export abstract class Process {
         this.args = args;
         this.eventListeners = new Map();
 
-        // Initialize event listener sets
         Object.values(ProcessEvent).forEach((event) => {
             this.eventListeners.set(event, new Set());
         });
@@ -59,6 +60,41 @@ export abstract class Process {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
             listeners.delete(listener);
+        }
+    }
+
+    /**
+     * Write input to the process
+     */
+    writeInput(input: string): void {
+        if (this._state !== ProcessState.RUNNING) {
+            throw new Error('Cannot write input to non-running process');
+        }
+
+        this.inputBuffer.push(input);
+        this.processNextInput();
+    }
+
+    /**
+     * Read input asynchronously
+     */
+    protected async readInput(): Promise<string> {
+        // If there's input in the buffer, return it immediately
+        if (this.inputBuffer.length > 0) {
+            return this.inputBuffer.shift()!;
+        }
+
+        // Otherwise, wait for input
+        return new Promise((resolve) => {
+            this.inputCallbacks.push(resolve);
+        });
+    }
+
+    private processNextInput(): void {
+        if (this.inputCallbacks.length > 0 && this.inputBuffer.length > 0) {
+            const callback = this.inputCallbacks.shift()!;
+            const input = this.inputBuffer.shift()!;
+            callback(input);
         }
     }
 
