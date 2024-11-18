@@ -18,72 +18,25 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 ## Project Structure
 
-```
+
+```bash
 open-web-container/
-├── apps
-│   └── playground
-│       ├── README.md
-│       ├── eslint.config.js
-│       ├── index.html
-│       ├── package.json
-│       ├── postcss.config.js
-│       ├── public
-│       │   └── vite.svg
-│       ├── src
-│       │   ├── App.css
-│       │   ├── App.tsx
-│       │   ├── assets
-│       │   │   └── react.svg
-│       │   ├── components
-│       │   │   ├── Editor
-│       │   │   │   ├── index.tsx
-│       │   │   │   └── styles.css
-│       │   │   ├── FileExplorer
-│       │   │   │   ├── index.tsx
-│       │   │   │   └── styles.css
-│       │   │   └── Terminal
-│       │   │       ├── index.tsx
-│       │   │       └── styles.css
-│       │   ├── hooks
-│       │   │   ├── useContainer.ts
-│       │   │   └── useFileTree.ts
-│       │   ├── index.css
-│       │   ├── main.tsx
-│       │   └── vite-env.d.ts
-│       ├── tailwind.config.js
-│       ├── tsconfig.app.json
-│       ├── tsconfig.json
-│       ├── tsconfig.node.json
-│       └── vite.config.ts
-├── commitlint.config.js
-├── package.json
-├── packageold.json
-├── packages
-│   └── core
-│       ├── package.json
-│       ├── pnpm-lock.yaml
-│       ├── src
-│       │   ├── container.ts
-│       │   ├── filesystem
-│       │   │   └── virtual-fs.ts
-│       │   ├── index.ts
-│       │   ├── interfaces
-│       │   │   └── index.ts
-│       │   ├── process
-│       │   │   ├── base.ts
-│       │   │   ├── index.ts
-│       │   │   ├── javascript.ts
-│       │   │   ├── manager.ts
-│       │   │   └── shell.ts
-│       │   └── shell
-│       │       └── shell.ts
-│       ├── tsconfig.json
-│       └── tsconfig.tsbuildinfo
-├── pnpm-lock.yaml
-├── pnpm-workspace.yaml
-├── turbo.json
-├── .gitignore
-└── Readme.md
+├── apps/                      # Application packages
+│   └── playground/           # Web-based playground
+│       ├── src/             
+│       │   ├── components/   # React components
+│       │   ├── hooks/       # React hooks
+│       │   └── ...
+│       └── ...
+├── packages/                  # Core packages
+│   └── core/                # Main container implementation
+│       ├── src/
+│       │   ├── filesystem/  # Virtual filesystem implementation
+│       │   ├── interfaces/  # TypeScript interfaces
+│       │   ├── process/    # Process management
+│       │   └── shell/      # Shell implementation
+│       └── ...
+└── ...
 ```
 
 ### Key Directories

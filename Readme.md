@@ -31,18 +31,56 @@ A browser-based virtual container runtime that enables server-like JavaScript ex
   - Resource management and cleanup
   - Based on QuickJS for reliable JavaScript execution
 
-## 📦 Installation
+## 📦 Project Structure
 
 ```bash
-npm install open-web-container
-# or
-yarn add open-web-container
+open-web-container/
+├── apps/                      # Application packages
+│   └── playground/           # Web-based playground
+│       ├── src/             
+│       │   ├── components/   # React components
+│       │   ├── hooks/       # React hooks
+│       │   └── ...
+│       └── ...
+├── packages/                  # Core packages
+│   └── core/                # Main container implementation
+│       ├── src/
+│       │   ├── filesystem/  # Virtual filesystem implementation
+│       │   ├── interfaces/  # TypeScript interfaces
+│       │   ├── process/    # Process management
+│       │   └── shell/      # Shell implementation
+│       └── ...
+└── ...
 ```
 
-## 🌟 Quick Start
+## 🛠️ Development Setup
+
+### Prerequisites
+- Node.js (v16 or higher)
+- pnpm (v8 or higher)
+- Git
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/open-web-container.git
+cd open-web-container
+
+# Install dependencies
+pnpm install
+
+# Start development
+pnpm dev          # Start all packages
+pnpm playground   # Start only the playground
+```
+
+## 📚 Usage
+
+### Using the Core Package
 
 ```typescript
-import { OpenWebContainer } from 'open-web-container';
+import { OpenWebContainer } from '@open-web-container/core';
 
 async function main() {
   // Create a new container
@@ -72,15 +110,9 @@ async function main() {
 main().catch(console.error);
 ```
 
-## 📚 Documentation
+### API Examples
 
-### Creating a Container
-
-```typescript
-const container = new OpenWebContainer();
-```
-
-### File System Operations
+#### File System Operations
 
 ```typescript
 // Directory operations
@@ -94,7 +126,7 @@ const content = container.readFile('/app/script.js');
 container.deleteFile('/app/script.js');
 ```
 
-### Process Management
+#### Process Management
 
 ```typescript
 // Spawn a shell process
@@ -103,11 +135,6 @@ const shell = await container.spawn('sh', ['ls', '-l']);
 // Spawn a JavaScript process
 const process = await container.spawn('/app/script.js');
 
-// Get process information
-const pid = process.pid;
-const state = process.state;
-const exitCode = process.exitCode;
-
 // Process events
 process.addEventListener('start', (data) => { /* ... */ });
 process.addEventListener('exit', (data) => { /* ... */ });
@@ -115,7 +142,7 @@ process.addEventListener('error', (data) => { /* ... */ });
 process.addEventListener('message', (data) => { /* ... */ });
 ```
 
-### Shell Commands
+#### Shell Commands
 
 ```typescript
 // Interactive shell
@@ -128,17 +155,36 @@ if (shell instanceof ShellProcess) {
 }
 ```
 
+## 🧪 Development Commands
+
+```bash
+# Start development
+pnpm dev              # Start all packages
+pnpm playground       # Start only the playground
+pnpm core:dev         # Start core package development
+
+# Building
+pnpm build           # Build all packages
+pnpm core:build      # Build only core package
+
+# Testing
+pnpm test            # Run all tests
+pnpm lint            # Run linter
+pnpm format          # Format code
+
+# Release
+pnpm changeset       # Create a changeset
+pnpm version-packages # Update versions
+pnpm release         # Publish to npm
+```
+
 ## 🛠️ Contributing
 
-We welcome contributions! Here's how you can help:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for details on:
+- Development workflow
+- Project structure
+- Testing guidelines
+- Pull request process
 
 ### Areas for Contribution
 
@@ -164,14 +210,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 - [ ] Add support for WebSocket simulation
 - [ ] Create development tools and debugging capabilities
 
-## 🧪 Testing
-
-```bash
-npm test
-# or
-yarn test
-```
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -184,7 +222,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 - Create an issue for bug reports or feature requests
-
-## 🌟 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/open-web-container&type=Date)](https://star-history.com/#yourusername/open-web-container&Date)
