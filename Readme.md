@@ -230,3 +230,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 - Create an issue for bug reports or feature requests
+
+## Similar projects
+- [Nano Web Ide](https://github.com/anbraten/nano-web-ide) 
