@@ -73,7 +73,7 @@ open-web-container/
 ```bash
 # Clone the repository
 git clone https://github.com/thecodacus/OpenWebContainer.git
-cd open-web-container
+cd OpenWebContainer
 
 # Install dependencies
 pnpm install
