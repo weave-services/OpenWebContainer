@@ -1,4 +1,4 @@
-import { OpenWebContainer, ProcessEvent, ShellProcess } from '@open-web-container/core';
+import { OpenWebContainer, Process, ProcessEvent, ShellProcess} from '@open-web-container/core';
 import { useState, useEffect, useCallback, useRef } from 'react';
 interface UseShellOptions {
     osc?: boolean;
@@ -8,7 +8,7 @@ interface UseShellOptions {
 export function useShell(container: OpenWebContainer | null, options: UseShellOptions = {}) {
     const [ready, setReady] = useState(false);
     const [output, setOutput] = useState<string[]>([]);
-    const processRef = useRef<ShellProcess | null>(null);
+    const processRef = useRef<Process | null>(null);
     const { osc = true, initialCommands = [] } = options;
 
     // Initialize shell process when container is available
@@ -20,7 +20,7 @@ export function useShell(container: OpenWebContainer | null, options: UseShellOp
                 const args = osc ? ['--osc'] : [];
                 const process = await container.spawn('sh', args);
 
-                if (!(process instanceof ShellProcess)) {
+                if (!(process instanceof Process)) {
                     throw new Error('Failed to create shell process');
                 }
 
@@ -29,8 +29,8 @@ export function useShell(container: OpenWebContainer | null, options: UseShellOp
 
                 // Set up process event listeners
                 process.addEventListener(ProcessEvent.MESSAGE, (data) => {
-                    if (data.stdout) setOutput(prev => [...prev, data.stdout]);
-                    if (data.stderr) setOutput(prev => [...prev, data.stderr]);
+                    if (data.stdout) setOutput((prev:string[]) => [...prev, data.stdout||'']);
+                    if (data.stderr) setOutput((prev:string[]) => [...prev, data.stderr||'']);
                 });
 
                 process.addEventListener(ProcessEvent.ERROR, (data) => {

@@ -1,4 +1,4 @@
-import { IFileSystem } from '../interfaces';
+import { IFileSystem } from './types';
 
 export class VirtualFileSystem implements IFileSystem {
     private files: Map<string, string>;

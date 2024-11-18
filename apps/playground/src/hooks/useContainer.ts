@@ -20,7 +20,7 @@ export function useContainer() {
     useEffect(() => {
         if (!containerRef.current) return;
 
-        const unsubscribe = containerRef.current.onOutput((newOutput) => {
+        const unsubscribe = containerRef.current.onOutput((newOutput:string) => {
             setOutput(prev => [...prev, newOutput]);
         });
 

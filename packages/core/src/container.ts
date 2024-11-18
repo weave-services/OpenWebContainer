@@ -1,8 +1,9 @@
-import { getQuickJS, JSModuleLoadResult, QuickJSContext } from "quickjs-emscripten";
-import { Process, ShellProcess, JavaScriptProcess } from "./process";
+import { ChildProcessPayload, ChildProcessResult, Process, ProcessEvent, ProcessExecutor, ProcessInfo, ProcessRegistry, ProcessTree, SpawnChildEventData } from "./process";
 import { VirtualFileSystem } from "./filesystem/virtual-fs";
-import { IFileSystem, ProcessEvent } from "./interfaces";
 import { ProcessManager } from "./process/manager";
+import { NodeProcessExecutor } from "./process/executors/node";
+import { ShellProcessExecutor } from "./process/executors/shell";
+import { IFileSystem } from "./filesystem";
 
 
 interface ProcessEventData {
@@ -19,12 +20,24 @@ interface ProcessEventData {
 export class OpenWebContainer {
     private fileSystem: IFileSystem;
     private processManager: ProcessManager;
+    private processRegistry: ProcessRegistry;
     private outputCallbacks: ((output: string) => void)[] = [];
-    private currentProcess: Process | null = null;
 
     constructor() {
         this.fileSystem = new VirtualFileSystem();
         this.processManager = new ProcessManager();
+        this.processRegistry = new ProcessRegistry();
+        
+
+        // Register default process executors
+        this.processRegistry.registerExecutor(
+            'javascript',
+            new NodeProcessExecutor(this.fileSystem)
+        );
+        this.processRegistry.registerExecutor(
+            'shell',
+            new ShellProcessExecutor(this.fileSystem)
+        );
     }
 
     /**
@@ -61,85 +74,33 @@ export class OpenWebContainer {
     /**
      * Process operations
      */
-    async spawn(executablePath: string, args: string[] = []): Promise<Process> {
-        const pid = this.processManager.getNextPid();
-        let process: Process;
-
-        if (executablePath === 'sh') {
-            // Create a shell process
-            process = new ShellProcess(pid, executablePath, args, this.fileSystem);
-        } else if (executablePath.endsWith('.js')) {
-            // Create a JavaScript process
-            const QuickJS = await getQuickJS();
-            const runtime = QuickJS.newRuntime();
-            const context = runtime.newContext();
-
-            // Set up module loader
-            runtime.setModuleLoader((moduleName: string, context: QuickJSContext): JSModuleLoadResult => {
-                try {
-                    // Get the current module's base path from the context if available
-                    let baseModule: string | undefined;
-                    const currentModule = context.getProp(context.global, 'import.meta');
-                    if (currentModule) {
-                        try {
-                            const importMeta = context.getProp(currentModule, 'url');
-                            baseModule = context.getString(importMeta);
-                            importMeta.dispose();
-                        } finally {
-                            currentModule.dispose();
-                        }
-                    }
-
-                    // Resolve the module path
-                    const resolvedPath = this.fileSystem.resolveModulePath(moduleName, baseModule);
-
-                    // Load the module content
-                    const content = this.fileSystem.readFile(resolvedPath);
-                    if (content === undefined) {
-                        return {
-                            error: new Error(`Module not found: ${moduleName}`),
-                        };
-                    }
-
-                    // Return successful module load result
-                    return {
-                        value: content,
-                    };
-                    
-
-                } catch (error: any) {
-                    // Return error result
-                    return {
-                        error: new Error(`Failed to load module ${moduleName}: ${error.message}`),
-                    };
-                }
-            }, (baseModuleName: string, requestedName: string, context: QuickJSContext): string => {
-                try {
-                    return this.fileSystem.resolveModulePath(requestedName, baseModuleName);
-                } catch (error: any) {
-                    throw new Error(`Failed to resolve module ${requestedName} from ${baseModuleName}: ${error.message}`);
-                }
-            });
-
-            process = new JavaScriptProcess(pid, executablePath, args, runtime, context);
-        } else {
-            throw new Error(`Unsupported executable type: ${executablePath}`);
+    async spawn(executablePath: string, args: string[] = [], parentPid?: number): Promise<Process> {
+        const executor = this.processRegistry.findExecutor(executablePath);
+        if (!executor) {
+            throw new Error(`No executor found for: ${executablePath}`);
         }
 
-        // Set up process event handlers
+        const pid = this.processManager.getNextPid();
+        const process = await executor.execute({
+            executable: executablePath,
+            args,
+            cwd: '/',
+            env: {}
+        }, pid, parentPid);
+
+        // Set up general process handlers
         this.setupProcessEventHandlers(process);
 
-        // Add process to manager
+        // Set up child process spawning for all processes
+        this.setupChildProcessSpawning(process);
+
+        // Add process to manager and start it
         this.processManager.addProcess(process);
-        this.currentProcess = process;
-
-        // Start the process
-        process.start().catch((error) => {
-            console.error(`Process ${process.pid} failed:`, error);
-        });
-
+        process.start().catch(console.error);
+        
         return process;
     }
+    
     private setupProcessEventHandlers(process: Process): void {
         process.addEventListener(ProcessEvent.MESSAGE, (data: ProcessEventData) => {
             if (data.stdout) {
@@ -156,32 +117,17 @@ export class OpenWebContainer {
             }
         });
 
-        process.addEventListener(ProcessEvent.EXIT, (data: ProcessEventData) => {
+        process.addEventListener(ProcessEvent.EXIT, (data) => {
             if (data.exitCode) {
                 this.notifyOutput(`Process exited with code: ${data.exitCode}\n`);
             }
-            if (this.currentProcess === process) {
-                this.currentProcess = null;
-            }
         });
+        
     }
-
-    /**
-     * Send input to the current process
-     */
-    async sendInput(input: string): Promise<void> {
-        if (!this.currentProcess) {
-            throw new Error('No active process to receive input');
-        }
-
-        try {
-            this.currentProcess.writeInput(input);
-        } catch (error: any) {
-            console.error('Failed to send input:', error);
-            throw error;
-        }
+    registerProcessExecutor(type: string, executor: ProcessExecutor): void {
+        this.processRegistry.registerExecutor(type, executor);
     }
-
+    
     /**
      * Register an output callback
      */
@@ -203,6 +149,163 @@ export class OpenWebContainer {
     listProcesses(): Process[] {
         return this.processManager.listProcesses();
     }
+
+    /**
+     * Get information about a process
+     */
+    getProcessInfo(process: Process): ProcessInfo {
+        const stats = process.getStats();
+        return {
+            pid: stats.pid,
+            ppid: stats.ppid,
+            type: stats.type,
+            state: stats.state,
+            executablePath: stats.executablePath,
+            args: stats.args,
+            startTime: stats.startTime,
+            endTime: stats.endTime,
+            uptime: process.uptime ?? undefined
+        };
+    }
+    // Add method to get child processes
+    getChildProcesses(parentPid: number): Process[] {
+        return this.processManager.listProcesses()
+            .filter(process => process.parentPid === parentPid);
+    }
+
+    /**
+     * Get process tree for a given process
+     */
+    getProcessTree(pid: number): ProcessTree {
+        const process = this.processManager.getProcess(pid);
+        if (!process) {
+            throw new Error(`Process ${pid} not found`);
+        }
+
+        return {
+            info: this.getProcessInfo(process),
+            children: this.getChildProcesses(pid)
+                .map(child => this.getProcessTree(child.pid))
+        };
+    }
+
+    /**
+     * Get full process tree starting from init process
+     */
+    getFullProcessTree(): ProcessTree[] {
+        // Get all top-level processes (those without parent)
+        const topLevelProcesses = this.processManager.listProcesses()
+            .filter(process => !process.parentPid);
+
+        return topLevelProcesses.map(process => this.getProcessTree(process.pid));
+    }
+
+    /**
+     * Print process tree (useful for debugging)
+     */
+    printProcessTree(tree: ProcessTree, indent: string = ''): string {
+        const { info } = tree;
+        let output = `${indent}${info.pid} ${info.executablePath} (${info.state})`;
+
+        if (info.uptime !== undefined) {
+            output += ` - uptime: ${info.uptime}ms`;
+        }
+        output += '\n';
+
+        for (const child of tree.children) {
+            output += this.printProcessTree(child, indent + '  ');
+        }
+
+        return output;
+    }
+    /**
+     * Terminate a process and all its children
+     */
+    async terminateProcessTree(pid: number): Promise<void> {
+        const children = this.getChildProcesses(pid);
+
+        // First terminate all children
+        await Promise.all(
+            children.map(child => this.terminateProcessTree(child.pid))
+        );
+
+        // Then terminate the process itself
+        const process = this.processManager.getProcess(pid);
+        if (process) {
+            await process.terminate();
+            this.processManager.removeProcess(pid);
+        }
+    }
+
+    private setupChildProcessSpawning(process: Process): void {
+        process.addEventListener(ProcessEvent.SPAWN_CHILD, (data: SpawnChildEventData) => {
+            this.spawnChildProcess(process.pid, data.payload, data.callback);
+        });
+    }
+    
+    private async spawnChildProcess(
+        parentPid: number,
+        payload: ChildProcessPayload,
+        callback: (result: ChildProcessResult) => void
+    ): Promise<void> {
+        try {
+            const parentProcess = this.processManager.getProcess(parentPid);
+            if (!parentProcess) {
+                throw new Error(`Parent process ${parentPid} not found`);
+            }
+
+            // Create output buffers
+            let stdout = '';
+            let stderr = '';
+
+            // Spawn the child process
+            const childProcess = await this.spawn(
+                payload.executable,
+                payload.args,
+                parentPid  // Pass parent PID
+            );
+
+            // Set up event handlers for the child process
+            childProcess.addEventListener(ProcessEvent.MESSAGE, (data: ProcessEventData) => {
+                if (data.stdout) {
+                    stdout += data.stdout;
+                    // Forward to parent process
+                    parentProcess.emit(ProcessEvent.MESSAGE, { stdout: data.stdout });
+                }
+                if (data.stderr) {
+                    stderr += data.stderr;
+                    // Forward to parent process
+                    parentProcess.emit(ProcessEvent.MESSAGE, { stderr: data.stderr });
+                }
+            });
+
+            childProcess.addEventListener(ProcessEvent.ERROR, (data: ProcessEventData) => {
+                if (data.error) {
+                    stderr += `${data.error.message}\n`;
+                    parentProcess.emit(ProcessEvent.MESSAGE, { stderr: data.error.message + '\n' });
+                }
+            });
+
+            childProcess.addEventListener(ProcessEvent.EXIT, (data) => {
+                callback({
+                    stdout,
+                    stderr,
+                    exitCode: data.exitCode ?? 1
+                });
+
+                // Clean up the process
+                this.processManager.removeProcess(childProcess.pid);
+            });
+
+        } catch (error: any) {
+            callback({
+                stdout: '',
+                stderr: error.message,
+                exitCode: 1
+            });
+        }
+    }
+
 
     /**
      * Cleanup

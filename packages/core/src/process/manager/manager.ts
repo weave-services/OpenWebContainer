@@ -1,4 +1,4 @@
-import { Process } from "./base";
+import { Process } from "../base";
 
 /**
  * Process Manager to handle multiple processes

@@ -1,4 +1,3 @@
-export { Process } from './base';
-export { ShellProcess } from './shell';
-export { JavaScriptProcess } from './javascript';
-export { ProcessManager } from './manager';
+export * from './base';
+export * from './executors';
+export * from './manager';

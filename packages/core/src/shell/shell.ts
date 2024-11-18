@@ -1,5 +1,5 @@
-import { getQuickJS } from 'quickjs-emscripten';
-import { IShell, IFileSystem, ShellCommandResult, CommandParsedResult } from '../interfaces';
+import { IFileSystem } from '../filesystem';
+import { IShell, ShellCommandResult, CommandParsedResult } from './types';
 interface ShellOptions {
     oscMode?: boolean;
 }
@@ -12,9 +12,8 @@ export class Shell implements IShell {
     private commandHistory: string[] = [];
     private historyIndex: number = -1;
     private oscMode: boolean = false;
-    private quickJSPromise = getQuickJS();
 
-    constructor(fileSystem: IFileSystem, options: ShellOptions = {}) {
+    constructor(fileSystem: IFileSystem, options: ShellOptions) {
         this.fileSystem = fileSystem;
         this.currentDirectory = '/';
         this.env = new Map([
@@ -24,6 +23,7 @@ export class Shell implements IShell {
         ]);
         this.oscMode = options.oscMode || false;
     }
+
     private formatOscOutput(type: string, content: string): string {
         if (!this.oscMode) return content;
 
@@ -270,20 +270,6 @@ export class Shell implements IShell {
         }
     }
 
-
-    private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
-        // Handle node command specially
-        if (command === 'node') {
-            if (args.length === 0) {
-                return this.failure('No JavaScript file specified');
-            }
-            return this.node(args[0], args.slice(1));
-        }
-
-        // Handle built-in commands as before
-        return this.executeBuiltin(command, args);
-    }
-
     private async executeBuiltin(command: string, args: string[]): Promise<ShellCommandResult> {
         switch (command) {
             case 'ls':
@@ -459,75 +445,16 @@ export class Shell implements IShell {
         }
     }
 
-    // execute node command
-    private async node(jsFile:string,args: string[] = []): Promise<ShellCommandResult> {
-        try {
-            const resolvedPath = this.resolvePath(jsFile);
-            const content = this.fileSystem.readFile(resolvedPath);
-
-            if (content === undefined) {
-                return this.failure(`File not found: ${jsFile}`);
+    private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
+        // Handle node command specially
+        if (command === 'node') {
+            if (args.length === 0) {
+                return this.failure('No JavaScript file specified');
             }
-
-            const QuickJS = await this.quickJSPromise;
-            const runtime = QuickJS.newRuntime();
-            const context = runtime.newContext();
-
-            // Set up module loader for the runtime
-            runtime.setModuleLoader((moduleName, ctx) => {
-                try {
-                    // Resolve module path relative to the current file
-                    const resolvedModulePath = this.fileSystem.resolveModulePath(moduleName, resolvedPath);
-                    const moduleContent = this.fileSystem.readFile(resolvedModulePath);
-
-                    if (moduleContent === undefined) {
-                        return { error: new Error(`Module not found: ${moduleName}`) };
-                    }
-
-                    return { value: moduleContent };
-                } catch (error: any) {
-                    return { error };
-                }
-            });
-
-            // Set up process.argv
-            const processHandle = context.newObject();
-            const argvHandle = context.newArray();
-
-            // Add default node argv items plus user args
-            const fullArgs = ['node', jsFile, ...args];
-            for (let i = 0; i < fullArgs.length; i++) {
-                const argHandle = context.newString(fullArgs[i]);
-                context.setProp(argvHandle, i, argHandle);
-                argHandle.dispose();
-            }
-
-            context.setProp(processHandle, 'argv', argvHandle);
-            context.setProp(context.global, 'process', processHandle);
-
-            argvHandle.dispose();
-            processHandle.dispose();
-
-            // Execute the file
-            const result = await context.evalCode(content, resolvedPath, { type: 'module' });
-
-            // Check for errors
-            if (result.error) {
-                const error = context.dump(result.error);
-                result.error.dispose();
-                context.dispose();
-                runtime.dispose();
-                return this.failure(`JavaScript execution error: ${error}`);
-            }
-
-            // Clean up
-            result.value.dispose();
-            context.dispose();
-            runtime.dispose();
-
-            return this.success();
-        } catch (error: any) {
-            return this.failure(`Failed to execute JavaScript: ${error.message}`);
+            // return this.executeJavaScriptProcess(args[0], args.slice(1));
         }
+
+        // Handle built-in commands as before
+        return this.executeBuiltin(command, args);
     }
 }

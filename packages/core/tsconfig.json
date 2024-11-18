@@ -12,11 +12,6 @@
     // Module Resolution
     "moduleResolution": "bundler",
     "baseUrl": "./src",
-    "paths": {
-      "@/*": [
-        "./*"
-      ]
-    },
     "types": [
       "node"
     ],
@@ -29,22 +24,10 @@
     "stripInternal": true,
     // Type Checking
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "useUnknownInCatchVariables": true,
-    "alwaysStrict": true,
-    "noUnusedLocals": true,
+    "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
-    "allowUnusedLabels": false,
-    "allowUnreachableCode": false,
+    "noUncheckedSideEffectImports": true,
     // Interop Constraints
     "isolatedModules": true,
     "esModuleInterop": true,
