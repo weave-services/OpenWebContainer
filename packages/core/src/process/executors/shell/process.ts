@@ -27,9 +27,10 @@ export class ShellProcess extends Process {
         executablePath: string,
         args: string[],
         fileSystem: IFileSystem,
-        parentPid?: number
+        parentPid?: number,
+        cwd?: string
     ) {
-        super(pid, ProcessType.SHELL, executablePath, args, parentPid);
+        super(pid, ProcessType.SHELL, executablePath, args, parentPid,cwd);
 
         const oscMode = args.includes('--osc');
         this.filteredArgs = args.filter(arg => arg !== '--osc');

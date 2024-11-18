@@ -25,6 +25,7 @@ export abstract class Process extends BrowserEventEmitter {
     readonly executablePath: string;
     readonly args: string[];
     readonly parentPid?: number|undefined;
+    readonly cwd?: string;
 
     private inputBuffer: string[] = [];
     private inputCallbacks: ((input: string) => void)[] = [];
@@ -37,7 +38,8 @@ export abstract class Process extends BrowserEventEmitter {
         type: ProcessType,
         executablePath: string,
         args: string[] = [],
-        parentPid?: number
+        parentPid?: number,
+        cwd?: string
     ) {
         super();
         this.pid = pid;
@@ -47,6 +49,7 @@ export abstract class Process extends BrowserEventEmitter {
         this.executablePath = executablePath;
         this.args = args;
         this.parentPid = parentPid;
+        this.cwd = cwd||'/';
 
         // Set max listeners to avoid memory leaks
         this.setMaxListeners(100);

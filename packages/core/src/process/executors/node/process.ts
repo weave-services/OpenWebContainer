@@ -10,8 +10,10 @@ export class NodeProcess extends Process {
         executablePath: string,
         args: string[],
         fileSystem: IFileSystem,
+        parantPid?: number,
+        cwd?: string
     ) {
-        super(pid, ProcessType.JAVASCRIPT, executablePath, args);
+        super(pid, ProcessType.JAVASCRIPT, executablePath, args, parantPid,cwd);
         this.fileSystem = fileSystem;
     }
 
@@ -19,37 +21,48 @@ export class NodeProcess extends Process {
         try {
             const QuickJS = await getQuickJS();
             const runtime = QuickJS.newRuntime();
-            const context = runtime.newContext();
-
             // Set up module loader
             runtime.setModuleLoader((moduleName, ctx) => {
                 try {
-                    const resolvedPath = this.fileSystem.resolveModulePath(moduleName, this.executablePath);
+                    const resolvedPath = this.fileSystem.resolveModulePath(moduleName, this.cwd);
                     const content = this.fileSystem.readFile(resolvedPath);
 
                     if (content === undefined) {
                         return { error: new Error(`Module not found: ${moduleName}`) };
                     }
-
                     return { value: content };
                 } catch (error: any) {
                     return { error };
                 }
+            }, (baseModuleName, requestedName) => {
+                try {
+                    // Get base directory from baseModuleName or use cwd
+                    const basePath = baseModuleName ?
+                        baseModuleName.substring(0, baseModuleName.lastIndexOf('/')) :
+                        this.cwd;
+
+                    const resolvedPath = this.fileSystem.resolveModulePath(requestedName, basePath);
+                    return { value: resolvedPath };
+                } catch (error: any) {
+                    return { error };
+                }
             });
+
+            const context = runtime.newContext();
 
             // Set up console.log and other console methods
             const consoleObj = context.newObject();
 
             // Console.log
             const logFn = context.newFunction("log", (...args) => {
-                const output = args.map(arg => context.dump(arg)).join(" ") + "\n";
+                const output = args.map(arg => JSON.stringify(context.dump(arg),null,2)).join(" ") + "\n";
                 this.emit(ProcessEvent.MESSAGE, { stdout: output });
             });
             context.setProp(consoleObj, "log", logFn);
 
             // Console.error
             const errorFn = context.newFunction("error", (...args) => {
-                const output = args.map(arg => context.dump(arg)).join(" ") + "\n";
+                const output = args.map(arg => JSON.stringify(context.dump(arg), null, 2)).join(" ") + "\n";
                 this.emit(ProcessEvent.MESSAGE, { stderr: output });
             });
             context.setProp(consoleObj, "error", errorFn);

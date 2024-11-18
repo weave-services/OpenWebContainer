@@ -113,23 +113,46 @@ export class VirtualFileSystem implements IFileSystem {
     }
 
     resolveModulePath(specifier: string, basePath: string = ''): string {
-        let resolvedPath = specifier;
+        const normalizedBasePath = this.normalizePath(basePath);
 
-        // If it's a relative import, resolve it relative to the base path
+        let resolvedPath: string;
+
         if (specifier.startsWith('./') || specifier.startsWith('../')) {
-            const baseDir = basePath.split('/').slice(0, -1).join('/');
-            resolvedPath = this.normalizePath(`${baseDir}/${specifier}`);
+            const baseDir = normalizedBasePath.endsWith('/') ?
+                normalizedBasePath :
+                normalizedBasePath + '/';
+
+            // Split paths into segments and handle .. navigation
+            const baseSegments = baseDir.split('/').filter(Boolean);
+            const specSegments = specifier.split('/').filter(Boolean);
+
+            const resultSegments = [...baseSegments];
+
+            for (const segment of specSegments) {
+                if (segment === '..') {
+                    if (resultSegments.length === 0) {
+                        throw new Error(`Invalid path: ${specifier} goes beyond root from ${basePath}`);
+                    }
+                    resultSegments.pop();
+                } else if (segment !== '.') {
+                    resultSegments.push(segment);
+                }
+            }
+
+            resolvedPath = '/' + resultSegments.join('/');
+        } else {
+            resolvedPath = this.normalizePath(specifier);
         }
 
-        // Try exact match first
+        // Check for file existence
         if (this.files.has(resolvedPath)) {
             return resolvedPath;
         }
 
-        // Try with extensions
         for (const ext of ['.js', '.mjs']) {
-            if (this.files.has(`${resolvedPath}${ext}`)) {
-                return `${resolvedPath}${ext}`;
+            const withExt = `${resolvedPath}${ext}`;
+            if (this.files.has(withExt)) {
+                return withExt;
             }
         }
 

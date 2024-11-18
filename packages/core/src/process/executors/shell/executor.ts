@@ -10,12 +10,14 @@ export class ShellProcessExecutor implements ProcessExecutor {
         return executable === 'sh';
     }
 
-    async execute(payload: ChildProcessPayload, pid: number): Promise<Process> {
+    async execute(payload: ChildProcessPayload, pid: number,parantPid?: number): Promise<Process> {
         return new ShellProcess(
             pid,
             payload.executable,
             payload.args,
-            this.fileSystem
+            this.fileSystem,
+            parantPid,
+            payload.cwd
         );
     }
 }

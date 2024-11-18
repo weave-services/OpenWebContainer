@@ -73,6 +73,13 @@ export default function App() {
 		};
 	}, [handleKeyPress]);
 
+	useEffect(() => {
+		if (container) {
+			container.writeFile("/module.js", 'export const name = "Module"');
+			container.writeFile("/index.js", 'import { name } from "./module.js"; console.log(name);');
+		}
+	}, [container]);
+
 	const handleSelectFile = (path: string) => {
 		// Prompt to save if there are unsaved changes
 		if (isDirty) {

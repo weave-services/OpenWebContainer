@@ -12,10 +12,11 @@ export class NodeProcessExecutor implements ProcessExecutor {
         return executable === 'node' || executable.endsWith('.js');
     }
 
-    async execute(payload: ChildProcessPayload, pid: number): Promise<Process> {
+    async execute(payload: ChildProcessPayload, pid: number, parentPid?: number): Promise<Process> {
         let executablePath = payload.executable;
         let args = payload.args;
 
+        let cwd = payload.cwd||'/';
         // If the command is 'node', the first arg is the script
         if (executablePath === 'node') {
             if (args.length === 0) {
@@ -29,7 +30,9 @@ export class NodeProcessExecutor implements ProcessExecutor {
             pid,
             executablePath,
             args,
-            this.fileSystem
+            this.fileSystem,
+            parentPid, 
+            cwd
         );
     }
 }
