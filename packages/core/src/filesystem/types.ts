@@ -13,4 +13,5 @@ export interface IFileSystem {
     deleteDirectory(path: string): void;
     listDirectory(path: string): string[];
     isDirectory(path: string): boolean;
+    normalizePath(path: string): string;
 }

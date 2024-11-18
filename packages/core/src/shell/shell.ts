@@ -13,7 +13,7 @@ export class Shell implements IShell {
     private commandHistory: string[] = [];
     private historyIndex: number = -1;
     private oscMode: boolean = false;
-    private buildInCommands: Map<string, (args: string[])=> Promise<ShellCommandResult>>= new Map();
+    private buildInCommands: Map<string, (args: string[]) => Promise<ShellCommandResult>> = new Map();
 
     constructor(fileSystem: IFileSystem, options: ShellOptions) {
         this.fileSystem = fileSystem;
@@ -39,6 +39,7 @@ export class Shell implements IShell {
         this.registerBuiltInCommand('rm', this.rm.bind(this));
         this.registerBuiltInCommand('rmdir', this.rmdir.bind(this));
         this.registerBuiltInCommand('touch', this.touch.bind(this));
+        this.registerBuiltInCommand('curl', this.curl.bind(this));
     }
 
     private formatOscOutput(type: string, content: string): string {
@@ -257,7 +258,7 @@ export class Shell implements IShell {
                 parsedCommand.command,
                 parsedCommand.args
             );
-            
+
 
             // Handle redirections
             if (result.exitCode === 0 && parsedCommand.redirects.length > 0) {
@@ -333,7 +334,7 @@ export class Shell implements IShell {
             const resolvedPath = this.resolvePath(path);
             const entries = this.fileSystem.listDirectory(resolvedPath);
             console.log(entries);
-            
+
             return this.success(entries.join('\n'));
         } catch (error: any) {
             return this.failure(error.message);
@@ -465,6 +466,73 @@ export class Shell implements IShell {
             return this.failure(error.message);
         }
     }
+    private async curl(args: string[]): Promise<ShellCommandResult> {
+        try {
+            // Basic argument parsing
+            const urlIndex = args.findIndex(arg => !arg.startsWith('-'));
+            if (urlIndex === -1) {
+                return {
+                    stdout: '',
+                    stderr: 'curl: URL required',
+                    exitCode: 1
+                };
+            }
+
+            const url = args[urlIndex];
+            const options = args.slice(0, urlIndex);
+
+            // Parse options
+            const method = options.includes('-X') ?
+                args[args.indexOf('-X') + 1] : 'GET';
+            const headers: Record<string, string> = {};
+            const outputFile = options.includes('-o') ?
+                args[args.indexOf('-o') + 1] : undefined;
+
+            // Handle headers
+            const headerIndex = options.indexOf('-H');
+            if (headerIndex !== -1) {
+                const headerStr = args[headerIndex + 1];
+                const [key, value] = headerStr.split(':').map(s => s.trim());
+                headers[key] = value;
+            }
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers
+                });
+
+                const responseText = await response.text();
+
+                if (outputFile) {
+                    this.fileSystem.writeFile(this.resolvePath(outputFile), responseText);
+                    return {
+                        stdout: `Downloaded to ${outputFile}\n`,
+                        stderr: '',
+                        exitCode: 0
+                    };
+                }
+
+                return {
+                    stdout: responseText + '\n',
+                    stderr: '',
+                    exitCode: 0
+                };
+            } catch (error: any) {
+                return {
+                    stdout: '',
+                    stderr: `curl: ${error.message}\n`,
+                    exitCode: 1
+                };
+            }
+        } catch (error: any) {
+            return {
+                stdout: '',
+                stderr: `curl: ${error.message}\n`,
+                exitCode: 1
+            };
+        }
+    }
 
     private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
         // // Handle node command specially
@@ -500,7 +568,7 @@ export class Shell implements IShell {
         // }
         // // check for shebang
 
-        
+
         // Handle built-in commands as before
         return this.executeBuiltin(command, args);
     }

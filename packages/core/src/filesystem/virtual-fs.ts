@@ -10,7 +10,7 @@ export class VirtualFileSystem implements IFileSystem {
         this.directories.add('/'); // Root directory
     }
 
-    private normalizePath(path: string): string {
+    normalizePath(path: string): string {
         let normalized = path.replace(/\\/g, '/');
         if (!normalized.startsWith('/')) {
             normalized = '/' + normalized;

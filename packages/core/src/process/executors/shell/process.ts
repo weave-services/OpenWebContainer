@@ -275,6 +275,10 @@ export class ShellProcess extends Process {
                     if(this.shell.hasCommand(command)) {
                         return await this.shell.execute(command, cmdArgs);
                     }
+                    else if (command === 'node') {
+                        const result = await this.spawnChild(command, cmdArgs);
+                        return result;
+                    }
                     else{
                         // check if the command is in env PATH
                         let PATH= this.env.get('PATH');
@@ -305,10 +309,7 @@ export class ShellProcess extends Process {
                         }
                     }
 
-                    if (command.endsWith('.js') || command === 'node') {
-                        const result = await this.spawnChild(command, cmdArgs);
-                        return result;
-                    }
+                    
                     // Execute through shell
                     return await this.shell.execute(command, cmdArgs);
                 } catch (error: any) {

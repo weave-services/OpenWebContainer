@@ -37,9 +37,11 @@ export class NodeProcess extends Process {
             }, (baseModuleName, requestedName) => {
                 try {
                     // Get base directory from baseModuleName or use cwd
-                    const basePath = baseModuleName ?
+                    let basePath = baseModuleName ?
                         baseModuleName.substring(0, baseModuleName.lastIndexOf('/')) :
                         this.cwd;
+
+                    basePath=this.fileSystem.normalizePath(basePath||this.cwd||"/");
 
                     const resolvedPath = this.fileSystem.resolveModulePath(requestedName, basePath);
                     return { value: resolvedPath };

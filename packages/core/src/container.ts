@@ -4,6 +4,7 @@ import { ProcessManager } from "./process/manager";
 import { NodeProcessExecutor } from "./process/executors/node";
 import { ShellProcessExecutor } from "./process/executors/shell";
 import { IFileSystem } from "./filesystem";
+import { ZenFSCore } from "./filesystem/zenfs-core";
 
 
 interface ProcessEventData {
@@ -24,7 +25,7 @@ export class OpenWebContainer {
     private outputCallbacks: ((output: string) => void)[] = [];
 
     constructor() {
-        this.fileSystem = new VirtualFileSystem();
+        this.fileSystem = new ZenFSCore();
         this.processManager = new ProcessManager();
         this.processRegistry = new ProcessRegistry();
         
