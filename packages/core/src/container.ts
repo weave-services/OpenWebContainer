@@ -117,8 +117,8 @@ export class OpenWebContainer {
         this.fileSystem.deleteFile(path);
     }
 
-    listFiles(): string[] {
-        return this.fileSystem.listFiles();
+    listFiles(basePath: string = '/'): string[] {
+        return this.fileSystem.listFiles(basePath);
     }
 
     createDirectory(path: string): void {

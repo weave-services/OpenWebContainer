@@ -25,6 +25,10 @@ export class ContainerManager {
         this.ready = this.initialize();
     }
 
+    waitForReady(): Promise<void> {
+        return this.ready;
+    }
+
     private async initialize(): Promise<void> {
         if (this._disposed) {
             throw new Error('Container has been disposed');

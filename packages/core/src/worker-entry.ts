@@ -1,3 +1,4 @@
+import { SpawnPayload, WorkerMessage, WorkerRequestMessage, WorkerResponse, WorkerResponseMessage } from 'worker-code';
 import { OpenWebContainer } from './container';
 import { Process, ProcessEvent } from './process';
 
@@ -5,16 +6,25 @@ let container: OpenWebContainer;
 const processOutputs = new Map<number, string[]>();
 const MAX_OUTPUT_BUFFER = 1000; // Maximum lines to keep in buffer
 
-self.onmessage = async function (e) {
-    const { type, id, data } = e.data;
+
+self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
+    const { type, id } = e.data;
 
     switch (type) {
+        case 'initialize':
+            let { payload } = e.data;
+            // Initialize container when worker starts
+            container = new OpenWebContainer({ debug: payload.debug });
+            // Send back confirmation
+            sendWorkerResponse({ type: 'initialized', id });
+            break;
         case 'spawn':
             try {
-                const parentPid:number = data.parentPid;
-                const process = await container.spawn(data.command, data.args, parentPid, {
-                    env: data.env,
-                    cwd: data.cwd
+                let payload:SpawnPayload = e.data.payload;
+                
+                const process = await container.spawn(payload.command, payload.args, payload.parentPid, {
+                    env: payload.options.env,
+                    cwd: payload.options.cwd
                 });
 
                 // Set up process event handlers
@@ -34,9 +44,10 @@ self.onmessage = async function (e) {
             }
             break;
 
-        case 'writeProcessInput':
+        case 'writeInput':
             try {
-                const { pid, input } = data;
+                const { payload } = e.data;
+                const { pid, input } = payload;
                 const process = container.getProcess(pid);
                 if (process) {
                     process.writeInput(input);
@@ -53,9 +64,10 @@ self.onmessage = async function (e) {
             }
             break;
 
-        case 'terminateProcess':
+        case 'terminate':
             try {
-                const { pid } = data;
+                const { payload } = e.data;
+                const { pid } = payload;
                 const process = container.getProcess(pid);
                 if (process) {
                     await process.terminate();
@@ -70,10 +82,172 @@ self.onmessage = async function (e) {
                 });
             }
             break;
+        
+        case 'getStats':
+            try {
+                const stats = {
+                    network: container.getNetworkStats(),
+                    processes: container.listProcesses().map(p => ({
+                        pid: p.pid,
+                        type: p.type,
+                        state: p.state,
+                        uptime: p.uptime
+                    }))
+                };
+                sendWorkerResponse({ type: 'stats', id, payload: stats });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        
+        case 'dispose':
+            try {
+                await container.dispose();
+                sendWorkerResponse({ type: 'disposed', id });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
 
         // ... other message handlers ...
+        case 'writeFile':
+            try {
+                const { pid, path, content } = e.data.payload;
+                await container.writeFile(path, content);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        case 'readFile':
+            try {
+                const { pid, path } = e.data.payload;
+                const content = await container.readFile(path);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                    payload: { content }
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        case 'deleteFile':
+            try {
+                const { pid, path, recursive } = e.data.payload;
+                await container.deleteFile(path);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        case 'listFiles':
+            try {
+                const { pid, path } = e.data.payload;
+                const files = await container.listFiles(path);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                    payload: { files }
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        case 'createDirectory':
+            try {
+                const { pid, path } = e.data.payload;
+                await container.createDirectory(path);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        case 'listDirectory':
+            try {
+                const { pid, path } = e.data.payload;
+                const files = await container.listDirectory(path);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                    payload: { files }
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
+        case 'deleteDirectory':
+            try {
+                const { pid, path } = e.data.payload;
+                await container.deleteDirectory(path);
+                sendWorkerResponse({
+                    type: 'success',
+                    id,
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+            break;
     }
 };
+
+function sendWorkerResponse(response: WorkerResponse) {
+    self.postMessage(response);
+}
 
 function setupProcessHandlers(process: Process) {
     // Initialize output buffer for this process

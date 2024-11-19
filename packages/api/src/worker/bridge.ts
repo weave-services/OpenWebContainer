@@ -5,7 +5,7 @@ import type {
 } from './types';
 
 export interface MessageHandler {
-    (message: WorkerResponse): void;
+    (message: Omit<WorkerResponse, "id">): void;
 }
 
 interface PendingRequest {
@@ -136,7 +136,7 @@ export class WorkerBridge {
             const { type, id, payload } = event.data;
 
             let error = undefined;
-            if (event.type === 'error') {
+            if (type === 'error') {
                 error = event.data.payload.error;
             }
             // Handle request responses
@@ -170,7 +170,7 @@ export class WorkerBridge {
     }
 
     private broadcastError(error: string): void {
-        const errorMessage: WorkerResponse = {
+        const errorMessage: Omit<WorkerResponse, "id"> = {
             type: 'error',
             payload: { error }
         };

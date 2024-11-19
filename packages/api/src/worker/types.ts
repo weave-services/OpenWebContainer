@@ -54,6 +54,9 @@ export interface FileSystemPayload {
     listDirectory: {
         path: string;
     };
+    deleteDirectory: {
+        path: string;
+    };
 }
 
 
@@ -61,7 +64,7 @@ export interface FileSystemPayload {
 export interface WorkerMessageBase {
     type: string;
     payload?: any;
-    id?: string;
+    id: string;
 }
 
 export type WorkerRequestMessage =
@@ -71,16 +74,18 @@ export type WorkerRequestMessage =
     | { type: 'terminate'; payload: { pid: number } }
     | { type: 'dispose' }
     | { type: 'getStats' }
-    | { type: 'writeFile'; payload: FileSystemPayload['writeFile'];} 
-    | { type: 'readFile'; payload: FileSystemPayload['readFile'];} 
-    | { type: 'deleteFile'; payload: FileSystemPayload['deleteFile'];} 
-    | { type: 'listFiles'; payload: FileSystemPayload['listFiles'];} 
-    | { type: 'createDirectory'; payload: FileSystemPayload['createDirectory'];} 
-    | { type: 'listDirectory'; payload: FileSystemPayload['listDirectory'];}  
+    | { type: 'writeFile'; payload: FileSystemPayload['writeFile']; }
+    | { type: 'readFile'; payload: FileSystemPayload['readFile']; }
+    | { type: 'deleteFile'; payload: FileSystemPayload['deleteFile']; }
+    | { type: 'listFiles'; payload: FileSystemPayload['listFiles']; }
+    | { type: 'createDirectory'; payload: FileSystemPayload['createDirectory']; }
+    | { type: 'listDirectory'; payload: FileSystemPayload['listDirectory']; }
+    | { type: 'deleteDirectory'; payload: FileSystemPayload['deleteDirectory']; }
     ;
 
 
 export type WorkerResponseMessage =
+    | { type: 'success' }
     | { type: 'initialized' }
     | { type: 'spawned'; payload: SpawnedPayload }
     | { type: 'processOutput'; payload: ProcessOutputPayload }
@@ -89,6 +94,7 @@ export type WorkerResponseMessage =
     | { type: 'error'; payload: { error: string } }
     | { type: 'disposed' }
     | { type: 'stats'; payload: any };
+
 
 export type WorkerMessage = WorkerRequestMessage | WorkerResponseMessage;
 export type WorkerResponse = WorkerMessageBase & WorkerResponseMessage;
