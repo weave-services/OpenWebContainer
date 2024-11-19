@@ -3,7 +3,9 @@
  */
 export interface IFileSystem {
     writeFile(path: string, content: string): void;
+    writeBuffer(path: string, buffer: Buffer): void;
     readFile(path: string): string | undefined;
+    readBuffer(path: string): Buffer | undefined;
     deleteFile(path: string, recursive?: boolean): void;
     listFiles(): string[];
     resolvePath(path: string, basePath?: string): string;

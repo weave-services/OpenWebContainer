@@ -7,6 +7,12 @@ export class ZenFSCore implements IFileSystem {
     constructor() {
         this.fs = fs;
     }
+    readBuffer(path: string): Buffer | undefined {
+        return this.fs.readFileSync(path);
+    }
+    writeBuffer(path: string, buffer: Buffer): void {
+        return this.fs.writeFileSync(path, buffer);
+    }
     normalizePath(path: string): string {
         return normalizePath(path);
     }

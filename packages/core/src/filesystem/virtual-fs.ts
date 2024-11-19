@@ -9,6 +9,12 @@ export class VirtualFileSystem implements IFileSystem {
         this.directories = new Set();
         this.directories.add('/'); // Root directory
     }
+    readBuffer(path: string): Buffer | undefined {
+        throw new Error('Method not implemented.');
+    }
+    writeBuffer(path: string, buffer: Buffer): void {
+        throw new Error('Method not implemented.');
+    }
 
     normalizePath(path: string): string {
         let normalized = path.replace(/\\/g, '/');

@@ -1,7 +1,14 @@
 import { IFileSystem } from '../filesystem';
+import JSZip from 'jszip';
 import { IShell, ShellCommandResult, CommandParsedResult } from './types';
+import { CommandRegistry } from './commands/registry';
+import { CurlCommand } from './commands/curl';
+import { UnzipCommand } from './commands/unzip';
+import { WgetCommand } from './commands/wget';
+import { Process } from '../process';
 interface ShellOptions {
     oscMode?: boolean;
+    process: Process;
     env?: Map<string, string>;
 }
 
@@ -14,6 +21,8 @@ export class Shell implements IShell {
     private historyIndex: number = -1;
     private oscMode: boolean = false;
     private buildInCommands: Map<string, (args: string[]) => Promise<ShellCommandResult>> = new Map();
+    private commandRegistry: CommandRegistry;
+    private process: Process;
 
     constructor(fileSystem: IFileSystem, options: ShellOptions) {
         this.fileSystem = fileSystem;
@@ -23,11 +32,17 @@ export class Shell implements IShell {
             ['HOME', '/home'],
             ['PWD', this.currentDirectory],
         ]);
+        this.process = options.process;
         this.oscMode = options.oscMode || false;
+        this.commandRegistry = new CommandRegistry();
         this.registerAllBuiltInCommands()
+        this.registerAllExternalCommands();
     }
     private registerBuiltInCommand(name: string, command: (args: string[]) => Promise<ShellCommandResult>) {
         this.buildInCommands.set(name, command);
+    }
+    private registerExternalCommand(name: string, commandClass: any) {
+        this.commandRegistry.register(name, commandClass);
     }
     private registerAllBuiltInCommands() {
         this.registerBuiltInCommand('cd', this.cd.bind(this));
@@ -39,7 +54,11 @@ export class Shell implements IShell {
         this.registerBuiltInCommand('rm', this.rm.bind(this));
         this.registerBuiltInCommand('rmdir', this.rmdir.bind(this));
         this.registerBuiltInCommand('touch', this.touch.bind(this));
-        this.registerBuiltInCommand('curl', this.curl.bind(this));
+    }
+    private registerAllExternalCommands() {
+        this.registerExternalCommand('curl', CurlCommand);
+        this.registerExternalCommand('unzip', UnzipCommand);
+        this.registerExternalCommand('wget', WgetCommand);
     }
 
     private formatOscOutput(type: string, content: string): string {
@@ -180,7 +199,7 @@ export class Shell implements IShell {
         this.env.set('PWD', resolvedPath);
     }
     hasCommand(command: string): boolean {
-        return this.buildInCommands.has(command);
+        return this.buildInCommands.has(command)||this.commandRegistry.has(command);
     }
 
     private resolvePath(path: string): string {
@@ -466,95 +485,6 @@ export class Shell implements IShell {
             return this.failure(error.message);
         }
     }
-    private async curl(args: string[]): Promise<ShellCommandResult> {
-        try {
-            // Basic argument parsing
-            const urlIndex = args.findIndex(arg => !arg.startsWith('-'));
-            if (urlIndex === -1) {
-                return {
-                    stdout: '',
-                    stderr: 'curl: URL required',
-                    exitCode: 1
-                };
-            }
-
-            const url = args[urlIndex];
-            const options = args.slice(0, urlIndex);
-
-            // Parse options
-            const method = options.includes('-X') ?
-                args[args.indexOf('-X') + 1] : 'GET';
-            const headers: Record<string, string> = {};
-            const outputFile = options.includes('-o') ?
-                args[args.indexOf('-o') + 1] : undefined;
-            
-            const followRedirects = !options.includes('--no-follow');
-            const insecure = options.includes('-k') || options.includes('--insecure');
-
-            // Parse headers
-            for (let i = 0; i < args.length; i++) {
-                if (args[i] === '-H' && args[i + 1]) {
-                    const headerStr = args[i + 1];
-                    const [key, ...valueParts] = headerStr.split(':');
-                    const value = valueParts.join(':').trim();
-                    headers[key.trim()] = value;
-                    i++; // Skip next argument since we processed it
-                }
-            }
-
-
-            try {
-                const response = await fetch(url, {
-                    method,
-                    headers: {
-                        ...headers,
-                        'Accept': '*/*',
-                        'Accept-Encoding': 'gzip, deflate, br',
-                    },
-                    redirect: followRedirects ? 'follow' : 'manual',
-                    // Ignore SSL certificate errors if -k flag is used
-                    mode: 'cors',
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const responseText = await response.text();
-
-                // Handle output to file if -o option is used
-                if (outputFile) {
-                    this.fileSystem.writeFile(this.resolvePath(outputFile), responseText);
-                    return {
-                        stdout: `  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n` +
-                            `                                   Dload  Upload   Total   Spent    Left  Speed\n` +
-                            `100  ${responseText.length}  100  ${responseText.length}    0     0   ${Math.floor(responseText.length / 0.1)}      0  0:00:01 --:--:--  0:00:01 ${Math.floor(responseText.length / 0.1)}\n`,
-                        stderr: '',
-                        exitCode: 0
-                    };
-                }
-
-                return {
-                    stdout: responseText + '\n',
-                    stderr: '',
-                    exitCode: 0
-                };
-
-            } catch (error: any) {
-                return {
-                    stdout: '',
-                    stderr: `curl: (6) Could not resolve host: ${error.message}\n`,
-                    exitCode: 6
-                };
-            }
-        } catch (error: any) {
-            return {
-                stdout: '',
-                stderr: `curl: ${error.message}\n`,
-                exitCode: 1
-            };
-        }
-    }
 
     private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
         // // Handle node command specially
@@ -567,6 +497,16 @@ export class Shell implements IShell {
         // check if the command is a built-in command
         if (this.buildInCommands.has(command)) {
             return this.buildInCommands.get(command)!(args);
+        }
+        if (this.commandRegistry.has(command)) {
+            let commandClass =this.commandRegistry.get(command)!
+            let commandObject = new commandClass({ 
+                cwd: this.currentDirectory, 
+                fileSystem: this.fileSystem, 
+                env: this.env,
+                process: this.process
+             });
+            return commandObject.execute(args);
         }
         // // check if the command is in env PATH
         // let PATH= this.env.get('PATH');
