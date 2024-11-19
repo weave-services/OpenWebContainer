@@ -2,10 +2,12 @@ import { ProcessExecutor } from "../base";
 import { ChildProcessPayload, Process } from "../../base";
 import { NodeProcess } from "./process";
 import { IFileSystem } from "../../../filesystem";
+import { NetworkManager } from "../../../network/manager";
 
 export class NodeProcessExecutor implements ProcessExecutor {
     constructor(
         private fileSystem: IFileSystem,
+        private networkManager: NetworkManager
     ) { }
 
     canExecute(executable: string): boolean {
@@ -31,6 +33,7 @@ export class NodeProcessExecutor implements ProcessExecutor {
             executablePath,
             args,
             this.fileSystem,
+            this.networkManager,
             parentPid, 
             cwd
         );

@@ -1,0 +1,25 @@
+{
+	"name": "@open-web-container/api",
+	"version": "0.1.0",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsup",
+		"test": "jest",
+		"lint": "eslint src/**/*.ts"
+	},
+	"dependencies": {
+		"@open-web-container/core": "workspace:*"
+	},
+	"peerDependencies": {
+		"react": "^18.0.0"
+	},
+	"devDependencies": {
+		"@types/jest": "^29.0.0",
+		"@types/react": "^18.0.0",
+		"jest": "^29.0.0",
+		"ts-jest": "^29.0.0",
+		"tsup": "^8.3.5",
+		"typescript": "^5.0.0"
+	}
+}

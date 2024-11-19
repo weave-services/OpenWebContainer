@@ -5,6 +5,9 @@ import { NodeProcessExecutor } from "./process/executors/node";
 import { ShellProcessExecutor } from "./process/executors/shell";
 import { IFileSystem } from "./filesystem";
 import { ZenFSCore } from "./filesystem/zenfs-core";
+import { NetworkManager } from "network/manager";
+import { ServerType, VirtualServer } from "./network/types";
+import { NetworkStats } from "./network/types";
 
 
 interface ProcessEventData {
@@ -15,6 +18,16 @@ interface ProcessEventData {
     exitCode?: number;
 }
 
+export interface ContainerOptions {
+    debug?: boolean;
+
+}
+
+export interface SpawnOptions {
+    cwd?: string;
+    env?: Record<string, string>;
+}
+
 /**
  * Main OpenWebContainer class
  */
@@ -23,23 +36,71 @@ export class OpenWebContainer {
     private processManager: ProcessManager;
     private processRegistry: ProcessRegistry;
     private outputCallbacks: ((output: string) => void)[] = [];
-
-    constructor() {
+    readonly networkManager: NetworkManager;
+    private debugMode: boolean;
+    constructor(options: ContainerOptions = {}) {
+        this.debugMode = options.debug || false;
         this.fileSystem = new ZenFSCore();
         this.processManager = new ProcessManager();
         this.processRegistry = new ProcessRegistry();
-        
+        this.networkManager = new NetworkManager({
+            getProcess: (pid: number) => this.processManager.getProcess(pid)
+        });
 
         // Register default process executors
         this.processRegistry.registerExecutor(
             'javascript',
-            new NodeProcessExecutor(this.fileSystem)
+            new NodeProcessExecutor(this.fileSystem, this.networkManager)
         );
         this.processRegistry.registerExecutor(
             'shell',
             new ShellProcessExecutor(this.fileSystem)
         );
+        this.debugLog('Container initialized');
     }
+    private debugLog(...args: any[]): void {
+        if (this.debugMode) {
+            console.log('[Container]', ...args);
+        }
+    }
+
+    /**
+     * Network Operations
+     */
+    async handleHttpRequest(request: Request, port: number): Promise<Response> {
+        this.debugLog(`HTTP Request: ${request.method} ${request.url} (Port: ${port})`);
+        try {
+            const response = await this.networkManager.handleRequest(request, port);
+            this.debugLog(`HTTP Response: ${response.status} ${response.statusText}`);
+            return response;
+        } catch (error) {
+            this.debugLog(`HTTP Error:`, error);
+            return new Response(
+                error instanceof Error ? error.message : 'Internal Server Error',
+                { status: 500 }
+            );
+        }
+    }
+
+    registerServer(pid: number, port: number, type: ServerType, options: VirtualServer['options'] = {}): string {
+        this.debugLog(`Registering ${type} server on port ${port} for process ${pid}`);
+        return this.networkManager.registerServer(pid, port, type, options);
+    }
+
+    unregisterServer(serverId: string): void {
+        this.debugLog(`Unregistering server ${serverId}`);
+        this.networkManager.unregisterServer(serverId);
+    }
+
+    getNetworkStats(): NetworkStats {
+        return this.networkManager.getNetworkStats();
+    }
+
+    listServers(): VirtualServer[] {
+        return this.networkManager.listServers();
+    }
+    
+
 
     /**
      * File system operations
@@ -75,7 +136,7 @@ export class OpenWebContainer {
     /**
      * Process operations
      */
-    async spawn(executablePath: string, args: string[] = [], parentPid?: number): Promise<Process> {
+    async spawn(executablePath: string, args: string[] = [], parentPid?: number,options: SpawnOptions = {}): Promise<Process> {
         const executor = this.processRegistry.findExecutor(executablePath);
         if (!executor) {
             throw new Error(`No executor found for: ${executablePath}`);
@@ -85,8 +146,8 @@ export class OpenWebContainer {
         const process = await executor.execute({
             executable: executablePath,
             args,
-            cwd: '/',
-            env: {}
+            cwd: options.cwd || '/',
+            env: options.env || {}
         }, pid, parentPid);
 
         // Set up general process handlers
@@ -309,9 +370,25 @@ export class OpenWebContainer {
 
 
     /**
-     * Cleanup
+     * Container Lifecycle
      */
     async dispose(): Promise<void> {
+        this.debugLog('Disposing container');
+
+        // Stop all network servers
+        for (const server of this.listServers()) {
+            this.networkManager.unregisterServer(`${server.type}:${server.port}`);
+        }
+
+        // Kill all processes
         await this.processManager.killAll();
+
+        // Clear output callbacks
+        this.outputCallbacks = [];
+
+        // Dispose network manager
+        this.networkManager.dispose();
+
+        this.debugLog('Container disposed');
     }
 }

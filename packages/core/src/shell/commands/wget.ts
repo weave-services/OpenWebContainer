@@ -57,15 +57,13 @@ export class WgetCommand extends ShellCommand {
                     break;
                 case '--no-check-certificate':
                     options.noCheck = true;
+                    options.noCheckCertificate = true;
                     break;
                 case '-c':
                     options.continue = true;
                     break;
                 case '--debug':
                     options.debug = true;
-                    break;
-                case '--no-check-certificate':
-                    options.noCheckCertificate = true;
                     break;
                 case '--header':
                 case '-H':

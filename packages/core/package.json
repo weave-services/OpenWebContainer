@@ -6,7 +6,11 @@
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"scripts": {
-		"build": "tsc --project tsconfig.json",
+		"compile": "tsc --project tsconfig.json",
+		"build:worker": "mkdir -p src/generated && BUILD_TARGET=worker tsup",
+		"build:main": "tsup",
+		"build": "pnpm build:worker && pnpm build:main",
+		
 		"clean": "rimraf dist",
 		"dev": "tsc --project tsconfig.json --watch",
 		"test": "jest",
@@ -18,11 +22,20 @@
 	"files": [
 		"dist"
 	],
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"require": "./dist/index.js"
+		},
+		"./worker-code": {
+			"import": "./dist/worker-code.js",
+			"require": "./dist/worker-code.cjs"
+		}
+	},
 	"keywords": [],
 	"author": "",
 	"license": "ISC",
 	"dependencies": {
-		"@types/node": "^22.9.0",
 		"@zenfs/core": "^1.3.3",
 		"buffer": "^6.0.3",
 		"fflate": "^0.8.2",
@@ -32,7 +45,12 @@
 		"tslib": "^2.6.2"
 	},
 	"devDependencies": {
+		"@types/node": "^22.9.0",
 		"@types/pako": "^2.0.3",
+		"esbuild": "^0.19.0",
+		"fs.promises": "^0.1.2",
+		"tsup": "^8.3.5",
+		"tsx": "^4.0.0",
 		"typescript": "^5.6.3"
 	},
 	"publishConfig": {

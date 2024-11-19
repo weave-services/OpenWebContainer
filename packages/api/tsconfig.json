@@ -4,17 +4,16 @@
     "target": "ES2020",
     "module": "ESNext",
     "lib": [
-      "ES2020",
-      "DOM"
+      "DOM",
+      "DOM.Iterable",
+      "ESNext",
+      "WebWorker"
     ],
     "outDir": "./dist",
     "rootDir": "./src",
     // Module Resolution
     "moduleResolution": "bundler",
     "baseUrl": "./src",
-    "types": [
-      "node"
-    ],
     // Emit Configuration
     "declaration": true,
     "declarationMap": true,
@@ -37,8 +36,8 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     // Projects
-    // "composite": true,
-    // "incremental": true,
+    "composite": true,
+    "incremental": true,
     // Skip type checking of declaration files
     "skipLibCheck": true
   },
