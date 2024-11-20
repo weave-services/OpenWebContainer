@@ -5,6 +5,68 @@ A browser-based virtual container runtime that enables server-like JavaScript ex
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
+## 🗺️ Architecture Overview
+
+![OpenWebContainer Architecture](./images/architecture.png)
+
+The architecture consists of three main layers:
+1. **UI Layer**: React-based user interface with terminal and file explorer
+2. **Container Manager**: Handles communication between UI and Worker
+3. **Web Worker**: Runs the actual container in an isolated thread
+
+## ⚡ Current Progress
+
+### ✅ Implemented Features
+
+- **Core Container Infrastructure**
+  - Web Worker integration for isolated execution
+  - Container API abstraction for Worker communication
+  - Event-based messaging system
+  - Process lifecycle management
+
+- **Virtual File System**
+  - Full directory structure
+  - Basic file operations
+  - Path resolution
+  - Module loading
+
+- **Shell Environment**
+  - Interactive shell with command history
+  - Built-in commands:
+    - `ls` - List directory contents
+    - `cd` - Change directory
+    - `pwd` - Print working directory
+    - `mkdir` - Create directory
+    - `touch` - Create file
+    - `rm` - Remove file
+    - `rmdir` - Remove directory
+    - `cat` - Display file contents
+    - `echo` - Display text
+    - `cp` - Copy file
+    - `mv` - Move file
+  - File redirection (`>`, `>>`)
+
+- **JavaScript Runtime**
+  - QuickJS-based execution
+  - ES Modules support
+  - Isolated contexts
+  - Console output integration
+
+### 🚧 In Progress
+
+- **Network Simulation**
+  - Web Worker based network interceptor
+  - HTTP request handling
+  - Sandbox security
+
+### 📋 Upcoming Features
+
+- Additional shell commands
+- NPM package manager simulation
+- Process signals (SIGTERM, SIGKILL, etc.)
+- Pipe operator (`|`) support
+- WebSocket simulation
+
 ## 🚀 Features
 
 - **Virtual File System**
@@ -34,7 +96,6 @@ A browser-based virtual container runtime that enables server-like JavaScript ex
 ## 📦 Project Structure
 
 ```bash
-open-web-container/
 .
 ├── apps/                      # Application packages
 │   └── playground/           # Web-based playground
@@ -46,19 +107,27 @@ open-web-container/
 │       │   ├── hooks/       # React hooks
 │       │   └── ...
 │       └── ...
-
-├── packages/                  # Core packages
-│   └── core/                # Main container implementation
+├── packages/
+│   ├── api/                 # API interface package
+│   │   ├── src/
+│   │   │   ├── container/   # Container API
+│   │   │   ├── process/     # Process-related types
+│   │   │   └── worker/      # Worker bridge implementation
+│   │   └── ...
+│   └── core/               # Core implementation
 │       ├── src/
 │       │   ├── filesystem/  # Virtual filesystem implementation
-│       │   ├── interfaces/  # TypeScript interfaces
-│       │   ├── process/    # Process management
-│       │   │   ├── base/
-│       │   │   ├── executors/
-│       │   │   └── manager/
-│       │   └── shell/      # Shell implementation
+│       │   ├── interfaces/  # Core interfaces
+│       │   ├── network/     # Network simulation
+│       │   ├── process/     # Process implementation
+│       │   │   ├── base/    # Base process classes
+│       │   │   ├── executors/ # Process type executors
+│       │   │   └── manager/   # Process management
+│       │   ├── shell/      # Shell implementation
+│       │   │   ├── commands/ # Shell command implementations
+│       │   │   └── ...
+│       │   └── utils/      # Utility functions
 │       └── ...
-└── ...
 ```
 
 ## 🛠️ Development Setup
@@ -196,26 +265,36 @@ We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for deta
 
 ### Areas for Contribution
 
-- Additional shell commands
-- Pipe (`|`) support
-- Environment variables
-- Process signals
-- File watchers
-- Network simulation
-- WebSocket support
-- Package management simulation
-- Testing utilities
-- Documentation improvements
+- Shell command improvements
+  - Add pipe (`|`) support
+  - Additional built-in commands
+  - Command argument parsing
+- Process management enhancements
+  - Process signals
+  - Job control
+  - Process groups
+- Network features
+  - HTTP request simulation
+  - WebSocket support
+  - Network isolation
+- Developer tools
+  - Debugging capabilities
+  - Process inspection
+  - Performance monitoring
 
 ## 📝 Roadmap
 
+Current focus areas:
+- [ ] Network simulation implementation
+- [ ] NPM package manager integration
+- [ ] Additional shell commands
+- [ ] WebSocket support
+
+Future plans:
 - [ ] Add pipe support for shell commands
 - [ ] Implement environment variables
 - [ ] Add signal handling (SIGTERM, SIGKILL, etc.)
 - [ ] Create process groups and job control
-- [ ] Add network simulation capabilities
-- [ ] Implement a package management system
-- [ ] Add support for WebSocket simulation
 - [ ] Create development tools and debugging capabilities
 
 ## 📄 License
@@ -230,6 +309,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 - Create an issue for bug reports or feature requests
+- Join our [Discussion Forum](https://github.com/thecodacus/OpenWebContainer/discussions)
 
-## Similar projects
-- [Nano Web Ide](https://github.com/anbraten/nano-web-ide) 
+## Similar Projects
+- [Nano Web IDE](https://github.com/anbraten/nano-web-ide)

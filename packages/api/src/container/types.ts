@@ -5,7 +5,33 @@ export interface ContainerOptions {
 }
 
 export interface ContainerStats {
-    processes: number;
-    memory: number;
-    uptime: number;
+    network: NetworkStats;
+    processes: {
+        pid: number;
+        type: string;
+        state: string;
+        uptime: number | null;
+    } [];
+}
+
+export interface NetworkStats {
+    servers: {
+        total: number;
+        active: number;
+        byType: any;
+    };
+    connections: {
+        total: number;
+        active: number;
+        byServer: Record<string, number>;
+    };
+    traffic: {
+        bytesReceived: number;
+        bytesSent: number;
+        requestsTotal: number;
+        requestsSuccess: number;
+        requestsFailed: number;
+        avgResponseTime: number;
+    };
+    requestsPerMinute: number;
 }

@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { ContainerManager } from '@open-web-container/api';
+import { useEffect, useMemo, useState } from 'react';
 
 interface FileSystemNode {
     name: string;
@@ -7,7 +8,36 @@ interface FileSystemNode {
     children?: FileSystemNode[];
 }
 
-export function useFileTree(paths: string[]) {
+export function useFileTree(containerReady:boolean,container:ContainerManager|null) {
+    const [paths, setPaths] = useState<string[]>([]);
+
+    useEffect(() => {
+        if(containerReady&&container){
+            container.listFiles()
+            .then(newPaths => {
+                setPaths(newPaths||[]);
+            });
+        }
+    }, [containerReady,container]);
+
+
+    // set a clock to monitor file changes
+    useEffect(() => {
+        let interval=setInterval(() => {
+            if(containerReady&&container){
+                container.listFiles()
+                .then(newPaths => {
+                    setPaths(newPaths||[]);
+                });
+            }
+        }, 1000);
+
+        return () => {
+            clearInterval(interval);
+        };
+        
+    }, [containerReady,container]);
+
     return useMemo(() => {
         const root: FileSystemNode = {
             name: '/',

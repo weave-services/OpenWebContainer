@@ -173,7 +173,11 @@ export class ContainerManager {
             type: 'getStats'
         });
 
-        return response.payload;
+        if(response.type==='stats'){
+            return response.payload;
+        }
+        throw new Error("Invalid response type")
+
     }
 
     /**
@@ -239,8 +243,10 @@ export class ContainerManager {
             type: 'readFile',
             payload: { path }
         });
-
-        return response.payload.content;
+        if(response.type!=='fileRead'){
+            throw new Error("Invalid response type");
+        }
+        return response.payload.content.toString();
     }
     async deleteFile(path: string, recursive?: boolean): Promise<void> {
         await this.ready;
@@ -271,7 +277,10 @@ export class ContainerManager {
                 type: 'listFiles',
                 payload: { path }
             });
-            return result.files;
+            if(result.type!=='fileList'){
+                throw new Error("Invalid response type");
+            }
+            return result.payload.files;
         } catch (error:any) {
             throw new Error(`Failed to list files: ${error.message}`);
         }
@@ -306,7 +315,10 @@ export class ContainerManager {
                 type: 'listDirectory',
                 payload: { path }
             });
-            return result.entries;
+            if(result.type!=='directoryList'){
+                throw new Error("Invalid response type");
+            }
+            return result.payload.directories;
         } catch (error:any) {
             throw new Error(`Failed to list directory: ${error.message}`);
         }

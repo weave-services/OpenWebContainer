@@ -1,7 +1,8 @@
 import type {
     WorkerMessage,
     WorkerResponse,
-    WorkerInitOptions
+    WorkerInitOptions,
+    WorkerResponseMessage
 } from './types';
 
 export interface MessageHandler {
@@ -45,7 +46,7 @@ export class WorkerBridge {
     async sendMessage(
         message: WorkerMessage,
         timeout: number = this.defaultTimeout
-    ): Promise<any> {
+    ): Promise<WorkerResponseMessage> {
         if (!this.worker) {
             throw new Error('Worker not initialized');
         }
@@ -148,7 +149,7 @@ export class WorkerBridge {
                 if (error) {
                     request.reject(new Error(error));
                 } else {
-                    request.resolve(payload);
+                    request.resolve({ type, id, payload });
                 }
                 return;
             }

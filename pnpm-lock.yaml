@@ -17,9 +17,9 @@ importers:
       '@monaco-editor/react':
         specifier: ^4.6.0
         version: 4.6.0(monaco-editor@0.52.0)(react-dom@18.3.1)(react@18.3.1)
-      '@open-web-container/core':
+      '@open-web-container/api':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/api
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
@@ -112,6 +112,15 @@ importers:
 
   packages/core:
     dependencies:
+      '@jitl/quickjs-asmjs-mjs-release-sync':
+        specifier: ^0.31.0
+        version: 0.31.0
+      '@jitl/quickjs-singlefile-browser-release-asyncify':
+        specifier: ^0.31.0
+        version: 0.31.0
+      '@jitl/quickjs-singlefile-browser-release-sync':
+        specifier: ^0.31.0
+        version: 0.31.0
       '@zenfs/core':
         specifier: ^1.3.3
         version: 1.3.3
@@ -1666,8 +1675,26 @@ packages:
       chalk: 4.1.2
     dev: true
 
+  /@jitl/quickjs-asmjs-mjs-release-sync@0.31.0:
+    resolution: {integrity: sha512-kl3Nf0fm6oYEEWfzovBm4qSNULoZ738JDSowafB0BPw+Kbn34Z2nZX2ewwUE4DmeQL0ZPqYFBQAD1Q42aXC37Q==}
+    dependencies:
+      '@jitl/quickjs-ffi-types': 0.31.0
+    dev: false
+
   /@jitl/quickjs-ffi-types@0.31.0:
     resolution: {integrity: sha512-1yrgvXlmXH2oNj3eFTrkwacGJbmM0crwipA3ohCrjv52gBeDaD7PsTvFYinlAnqU8iPME3LGP437yk05a2oejw==}
+    dev: false
+
+  /@jitl/quickjs-singlefile-browser-release-asyncify@0.31.0:
+    resolution: {integrity: sha512-w0Ov2rmoGSsSrSosLQMEKpzgVfz2TcNSlJcjMDSqns6YuXpBMFYcAEHklQ6p5xwK2o70RbVf+pietG3K/ZAwow==}
+    dependencies:
+      '@jitl/quickjs-ffi-types': 0.31.0
+    dev: false
+
+  /@jitl/quickjs-singlefile-browser-release-sync@0.31.0:
+    resolution: {integrity: sha512-JctBiLmRpxEp83gJWhDcBuFqm5X7T683OLmncN9g0chAHkC8+y5cJmgknaAk5Rb/ANDR3pXMMnGdnGXDdysfBQ==}
+    dependencies:
+      '@jitl/quickjs-ffi-types': 0.31.0
     dev: false
 
   /@jitl/quickjs-wasmfile-debug-asyncify@0.31.0:

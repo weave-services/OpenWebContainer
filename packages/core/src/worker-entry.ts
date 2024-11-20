@@ -7,7 +7,7 @@ const processOutputs = new Map<number, string[]>();
 const MAX_OUTPUT_BUFFER = 1000; // Maximum lines to keep in buffer
 
 
-self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
+self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
     const { type, id } = e.data;
 
     switch (type) {
@@ -20,8 +20,8 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
             break;
         case 'spawn':
             try {
-                let payload:SpawnPayload = e.data.payload;
-                
+                let payload: SpawnPayload = e.data.payload;
+
                 const process = await container.spawn(payload.command, payload.args, payload.parentPid, {
                     env: payload.options.env,
                     cwd: payload.options.cwd
@@ -30,16 +30,16 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 // Set up process event handlers
                 setupProcessHandlers(process);
 
-                self.postMessage({
-                    type: 'processStarted',
+                sendWorkerResponse({
+                    type: 'spawned',
                     id,
-                    data: { pid: process.pid }
+                    payload: { pid: process.pid }
                 });
-            } catch (error:any) {
-                self.postMessage({
+            } catch (error: any) {
+                sendWorkerResponse({
                     type: 'error',
                     id,
-                    error: error.message
+                    payload: { error: error.message }
                 });
             }
             break;
@@ -51,15 +51,15 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const process = container.getProcess(pid);
                 if (process) {
                     process.writeInput(input);
-                    self.postMessage({ type: 'inputWritten', id });
+                    sendWorkerResponse({ type: 'inputWritten', id });
                 } else {
                     throw new Error(`Process ${pid} not found`);
                 }
-            } catch (error:any) {
-                self.postMessage({
+            } catch (error: any) {
+                sendWorkerResponse({
                     type: 'error',
                     id,
-                    error: error.message
+                    payload: { error: error.message }
                 });
             }
             break;
@@ -72,17 +72,17 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 if (process) {
                     await process.terminate();
                     processOutputs.delete(pid);
-                    self.postMessage({ type: 'processTerminated', id });
+                    sendWorkerResponse({ type: 'terminated', id, payload: { pid, exitCode: 0 } });
                 }
-            } catch (error:any) {
-                self.postMessage({
+            } catch (error: any) {
+                sendWorkerResponse({
                     type: 'error',
                     id,
-                    error: error.message
+                    payload: { error: error.message }
                 });
             }
             break;
-        
+
         case 'getStats':
             try {
                 const stats = {
@@ -104,7 +104,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 });
             }
             break;
-        
+
         case 'dispose':
             try {
                 await container.dispose();
@@ -119,13 +119,12 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
             }
             break;
 
-        // ... other message handlers ...
         case 'writeFile':
             try {
                 const { pid, path, content } = e.data.payload;
                 await container.writeFile(path, content);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'fileWritten',
                     id,
                 });
             }
@@ -142,7 +141,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const { pid, path } = e.data.payload;
                 const content = await container.readFile(path);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'fileRead',
                     id,
                     payload: { content }
                 });
@@ -160,7 +159,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const { pid, path, recursive } = e.data.payload;
                 await container.deleteFile(path);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'fileDeleted',
                     id,
                 });
             }
@@ -177,7 +176,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const { pid, path } = e.data.payload;
                 const files = await container.listFiles(path);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'fileList',
                     id,
                     payload: { files }
                 });
@@ -195,7 +194,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const { pid, path } = e.data.payload;
                 await container.createDirectory(path);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'directoryCreated',
                     id,
                 });
             }
@@ -212,7 +211,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const { pid, path } = e.data.payload;
                 const files = await container.listDirectory(path);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'directoryList',
                     id,
                     payload: { files }
                 });
@@ -230,7 +229,7 @@ self.onmessage = async function (e:MessageEvent<WorkerMessage>) {
                 const { pid, path } = e.data.payload;
                 await container.deleteDirectory(path);
                 sendWorkerResponse({
-                    type: 'success',
+                    type: 'directoryDeleted',
                     id,
                 });
             }
@@ -266,21 +265,32 @@ function setupProcessHandlers(process: Process) {
 
         processOutputs.set(process.pid, outputs);
 
-        // Send output to main thread
-        self.postMessage({
-            type: 'processOutput',
-            data: {
-                pid: process.pid,
-                output: data.stdout || data.stderr,
-                isError: !!data.stderr
-            }
-        });
+        if (!!data.stderr) {
+            sendWorkerResponse({
+                type: 'processError',
+                payload: {
+                    pid: process.pid,
+                    error: data.stderr
+                }
+            });
+        }
+        else {
+            // Send output to main thread
+            sendWorkerResponse({
+                type: 'processOutput',
+                payload: {
+                    pid: process.pid,
+                    output: data.stdout || data.stderr,
+                    isError: !!data.stderr
+                }
+            });
+        }
     });
 
     process.addEventListener(ProcessEvent.EXIT, (data) => {
-        self.postMessage({
+        sendWorkerResponse({
             type: 'processExit',
-            data: {
+            payload: {
                 pid: process.pid,
                 exitCode: data.exitCode
             }

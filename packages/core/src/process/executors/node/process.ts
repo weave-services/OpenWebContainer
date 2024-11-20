@@ -1,10 +1,11 @@
 import { ServerType } from '../../../network/types';
 import { IFileSystem } from '../../../filesystem';
 import { Process, ProcessEvent, ProcessState, ProcessType } from '../../base';
-import { getQuickJS, QuickJSContext, QuickJSHandle } from 'quickjs-emscripten';
+import { getQuickJS, QuickJSContext, QuickJSHandle, newQuickJSWASMModuleFromVariant, newQuickJSAsyncWASMModuleFromVariant } from 'quickjs-emscripten';
 import { NetworkManager } from '../../../network/manager';
-
-
+// import variant from "@jitl/quickjs-singlefile-browser-release-sync"
+// import variant from "@jitl/quickjs-asmjs-mjs-release-sync"
+import variant from "@jitl/quickjs-singlefile-browser-release-asyncify"
 interface PendingHttpRequest {
     resolve: (response: Response) => void;
     reject: (error: Error) => void;
@@ -36,7 +37,8 @@ export class NodeProcess extends Process {
 
     async execute(): Promise<void> {
         try {
-            const QuickJS = await getQuickJS();
+            const QuickJS = await newQuickJSAsyncWASMModuleFromVariant(variant)
+
             const runtime = QuickJS.newRuntime();
             // Set up module loader
             runtime.setModuleLoader((moduleName, ctx) => {
@@ -84,6 +86,13 @@ export class NodeProcess extends Process {
                 this.emit(ProcessEvent.MESSAGE, { stdout: output });
             });
             context.setProp(consoleObj, "log", logFn);
+
+            // Console.debug
+            const debugFn = context.newFunction("debug", (...args) => {
+                const output = args.map(arg => JSON.stringify(context.dump(arg), null, 2)).join(" ") + "\n";
+                this.emit(ProcessEvent.MESSAGE, { stderr: output });
+            });
+            context.setProp(consoleObj, "debug", debugFn);
 
             // Console.error
             const errorFn = context.newFunction("error", (...args) => {
@@ -142,7 +151,6 @@ export class NodeProcess extends Process {
                 if (result.error) {
                     throw context.dump(result.error);
                 }
-
                 result.value.dispose();
                 this._exitCode = 0;
                 this._state = ProcessState.COMPLETED;
@@ -152,7 +160,7 @@ export class NodeProcess extends Process {
                 this.emit(ProcessEvent.MESSAGE, { stderr: `${error}\n` });
             } finally {
                 context.dispose();
-                runtime.dispose();
+                // runtime.;
                 this.emit(ProcessEvent.EXIT, { pid: this.pid, exitCode: this._exitCode });
             }
         } catch (error: any) {

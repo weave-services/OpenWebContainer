@@ -94,12 +94,30 @@ export type WorkerResponseMessage =
     | { type: 'success' }
     | { type: 'initialized' }
     | { type: 'spawned'; payload: SpawnedPayload }
+    | { type: 'inputWritten';}
+    | { type: 'terminated'; payload: ProcessExitPayload; }
+    | { type: 'disposed';}
+    | {
+        type: 'stats'; payload: {
+            network: any;
+            processes: {
+                pid: number;
+                type: string;
+                state: string;
+                uptime: number | null;
+            }[];
+        } }
+    | { type: 'fileWritten'; }
+    | { type: 'fileRead'; payload: { content: string } }
+    | { type: 'fileDeleted'; }
+    | { type: 'fileList'; payload: { files: string[] } }
+    | { type: 'directoryCreated'; }
+    | { type: 'directoryDeleted'; }
+    | { type: 'directoryList'; payload: { directories: string[] } }
+    | { type: 'error'; payload: { error: string } }
     | { type: 'processOutput'; payload: ProcessOutputPayload }
     | { type: 'processExit'; payload: ProcessExitPayload }
     | { type: 'processError'; payload: ProcessErrorPayload }
-    | { type: 'error'; payload: { error: string } }
-    | { type: 'disposed' }
-    | { type: 'stats'; payload: any };
 
 
 export type WorkerMessage = WorkerMessageBase&(WorkerRequestMessage | WorkerResponseMessage);

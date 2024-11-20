@@ -11,17 +11,17 @@ import { useShell } from "./hooks/useShell";
 
 export default function App() {
 	const { ready: containerReady, container } = useContainer();
-  const {
+	const {
 		ready: shellReady,
 		output,
 		sendCommand,
 		shell,
-  } = useShell(container, {
+	} = useShell(container, {
 		osc: true,
-  });
+	});
 
 
-	const fileTree = useFileTree(container?.listFiles() || []);
+	const fileTree = useFileTree(containerReady,container); 
 	const [currentFile, setCurrentFile] = useState("");
 	const [fileContent, setFileContent] = useState("");
 	const [isDirty, setIsDirty] = useState(false);
@@ -33,7 +33,6 @@ export default function App() {
 		setCurrentEditorContent(value);
 		setIsDirty(value !== fileContent);
 	};
-
 
 	const handleSave = useCallback(async () => {
 		if (!currentFile || !isDirty) return;
@@ -80,7 +79,7 @@ export default function App() {
 		}
 	}, [container]);
 
-	const handleSelectFile = (path: string) => {
+	const handleSelectFile = async (path: string) => {
 		// Prompt to save if there are unsaved changes
 		if (isDirty) {
 			const save = window.confirm("You have unsaved changes. Do you want to save them before switching files?");
@@ -88,9 +87,12 @@ export default function App() {
 				handleSave();
 			}
 		}
+		if(!container){
+			return;
+		}
 
 		setCurrentFile(path);
-		const content = container?.readFile(path) || "";
+		const content = await container.readFile(path) || "";
 		setFileContent(content);
 		setCurrentEditorContent(content);
 		setIsDirty(false);
@@ -114,11 +116,11 @@ export default function App() {
 				setIsDirty(false);
 			}
 		} catch {
-			container?.deleteDirectory(path);
+			// container?.deleteDirectory(path);
 		}
 	};
 
-	if (!containerReady||!shellReady) {
+	if (!containerReady || !shellReady) {
 		return (
 			<div className="h-screen w-screen flex items-center justify-center bg-gray-900">
 				<div className="text-center space-y-4">

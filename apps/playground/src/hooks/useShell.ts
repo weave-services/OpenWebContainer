@@ -1,26 +1,26 @@
-import { OpenWebContainer, Process, ProcessEvent, ShellProcess} from '@open-web-container/core';
+import { VirtualProcess,ContainerManager, ProcessEvent} from '@open-web-container/api';
 import { useState, useEffect, useCallback, useRef } from 'react';
 interface UseShellOptions {
     osc?: boolean;
     initialCommands?: string[];
 }
 
-export function useShell(container: OpenWebContainer | null, options: UseShellOptions = {}) {
+export function useShell(container: ContainerManager | null, options: UseShellOptions = {}) {
     const [ready, setReady] = useState(false);
     const [output, setOutput] = useState<string[]>([]);
-    const processRef = useRef<Process | null>(null);
+    const processRef = useRef<VirtualProcess | null>(null);
     const { osc = true, initialCommands = [] } = options;
 
     // Initialize shell process when container is available
     useEffect(() => {
         if (!container) return;
 
-        async function initShell(container: OpenWebContainer) {
+        async function initShell(container: ContainerManager) {
             try {
                 const args = osc ? ['--osc'] : [];
                 const process = await container.spawn('sh', args);
 
-                if (!(process instanceof Process)) {
+                if (!(process instanceof VirtualProcess)) {
                     throw new Error('Failed to create shell process');
                 }
 
@@ -28,16 +28,15 @@ export function useShell(container: OpenWebContainer | null, options: UseShellOp
                 processRef.current = process;
 
                 // Set up process event listeners
-                process.addEventListener(ProcessEvent.MESSAGE, (data) => {
-                    if (data.stdout) setOutput((prev:string[]) => [...prev, data.stdout||'']);
-                    if (data.stderr) setOutput((prev:string[]) => [...prev, data.stderr||'']);
+                process.on(ProcessEvent.OUTPUT, (data) => {
+                    setOutput((prev: string[]) => [...prev, data.output || '']);
                 });
 
-                process.addEventListener(ProcessEvent.ERROR, (data) => {
+                process.on(ProcessEvent.ERROR, (data) => {
                     if (data.error) setOutput(prev => [...prev, `Error: ${data.error.message}\n`]);
                 });
 
-                process.addEventListener(ProcessEvent.EXIT, () => {
+                process.on(ProcessEvent.EXIT, () => {
                     setReady(false);
                     processRef.current = null;
                 });
@@ -46,7 +45,7 @@ export function useShell(container: OpenWebContainer | null, options: UseShellOp
 
                 // Execute initial commands if any
                 for (const cmd of initialCommands) {
-                    process.writeInput(cmd + '\r');
+                    process.write(cmd + '\r');
                 }
             } catch (error) {
                 console.error('Failed to initialize shell:', error);
@@ -60,7 +59,7 @@ export function useShell(container: OpenWebContainer | null, options: UseShellOp
         return () => {
             const process = processRef.current;
             if (process) {
-                process.terminate();
+                process.kill();
                 processRef.current = null;
                 setReady(false);
             }
@@ -73,7 +72,7 @@ export function useShell(container: OpenWebContainer | null, options: UseShellOp
         }
 
         try {
-            processRef.current.writeInput(input);
+            processRef.current.write(input);
         } catch (error) {
             console.error('Failed to send command:', error);
             throw error;

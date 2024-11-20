@@ -3,6 +3,7 @@
     // Build Configuration
     "target": "ES2020",
     "module": "ESNext",
+    // "types": "./dist/index.d.ts",
     "lib": [
       "ES2020",
       "DOM"
@@ -12,9 +13,6 @@
     // Module Resolution
     "moduleResolution": "bundler",
     "baseUrl": "./src",
-    "types": [
-      "node"
-    ],
     // Emit Configuration
     "declaration": true,
     "declarationMap": true,

@@ -14,7 +14,9 @@ if (isWorkerBuild) {
             },
             format: ['iife'],
             globalName: 'OpenWebContainer',
-            minify: true,
+            // minify: true,
+            platform: 'browser',
+            bundle: true,
             sourcemap: true,
             outDir: 'dist',
             onSuccess: async () => {

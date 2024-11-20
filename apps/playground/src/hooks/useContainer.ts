@@ -1,35 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { OpenWebContainer } from '@open-web-container/core';
+import { ContainerManager } from '@open-web-container/api';
 
 
 export function useContainer() {
-    const containerRef = useRef<OpenWebContainer | null>(null);
+    const containerRef = useRef<ContainerManager | null>(null);
     const [ready, setReady] = useState(false);
-    const [output, setOutput] = useState<string[]>([]);
 
     useEffect(() => {
-        containerRef.current = new OpenWebContainer();
-        setReady(true);
-
-        return () => {
-            containerRef.current?.dispose();
-        };
-    }, []);
-
-    // Set up output handling
-    useEffect(() => {
-        if (!containerRef.current) return;
-
-        const unsubscribe = containerRef.current.onOutput((newOutput:string) => {
-            setOutput(prev => [...prev, newOutput]);
+        containerRef.current = new ContainerManager();
+        containerRef.current.waitForReady().then(() => {
+            setReady(true);
         });
 
-        return unsubscribe;
-    }, [containerRef.current]);
+        // return () => {
+        //     containerRef.current?.dispose();
+        // };
+    }, []);
 
     return {
         ready,
-        output,
         container: containerRef.current,    
     };
 }
