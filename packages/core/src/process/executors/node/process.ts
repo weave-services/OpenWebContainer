@@ -82,21 +82,21 @@ export class NodeProcess extends Process {
 
             // Console.log
             const logFn = context.newFunction("log", (...args) => {
-                const output = args.map(arg => JSON.stringify(context.dump(arg),null,2)).join(" ") + "\n";
+                const output = args.map(arg => `${context.dump(arg)}`).join(" ") + "\n";
                 this.emit(ProcessEvent.MESSAGE, { stdout: output });
             });
             context.setProp(consoleObj, "log", logFn);
 
             // Console.debug
             const debugFn = context.newFunction("debug", (...args) => {
-                const output = args.map(arg => JSON.stringify(context.dump(arg), null, 2)).join(" ") + "\n";
+                const output = args.map(arg => `${context.dump(arg)}`).join(" ") + "\n";
                 this.emit(ProcessEvent.MESSAGE, { stderr: output });
             });
             context.setProp(consoleObj, "debug", debugFn);
 
             // Console.error
             const errorFn = context.newFunction("error", (...args) => {
-                const output = args.map(arg => JSON.stringify(context.dump(arg), null, 2)).join(" ") + "\n";
+                const output = args.map(arg => `${context.dump(arg)}`).join(" ") + "\n";
                 this.emit(ProcessEvent.MESSAGE, { stderr: output });
             });
             context.setProp(consoleObj, "error", errorFn);

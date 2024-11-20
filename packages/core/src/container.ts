@@ -310,15 +310,15 @@ export class OpenWebContainer {
         payload: ChildProcessPayload,
         callback: (result: ChildProcessResult) => void
     ): Promise<void> {
+
+        let childPid:number|null=null
         try {
             const parentProcess = this.processManager.getProcess(parentPid);
             if (!parentProcess) {
                 throw new Error(`Parent process ${parentPid} not found`);
             }
 
-            // Create output buffers
-            let stdout = '';
-            let stderr = '';
+           
 
             // Spawn the child process
             const childProcess = await this.spawn(
@@ -326,32 +326,24 @@ export class OpenWebContainer {
                 payload.args,
                 parentPid  // Pass parent PID
             );
+            childPid=childProcess.pid
 
             // Set up event handlers for the child process
             childProcess.addEventListener(ProcessEvent.MESSAGE, (data: ProcessEventData) => {
-                if (data.stdout) {
-                    stdout += data.stdout;
-                    // Forward to parent process
-                    parentProcess.emit(ProcessEvent.MESSAGE, { stdout: data.stdout });
-                }
-                if (data.stderr) {
-                    stderr += data.stderr;
-                    // Forward to parent process
-                    parentProcess.emit(ProcessEvent.MESSAGE, { stderr: data.stderr });
-                }
+                parentProcess.emit(ProcessEvent.MESSAGE, { ...data });
             });
 
             childProcess.addEventListener(ProcessEvent.ERROR, (data: ProcessEventData) => {
                 if (data.error) {
-                    stderr += `${data.error.message}\n`;
                     parentProcess.emit(ProcessEvent.MESSAGE, { stderr: data.error.message + '\n' });
+                    
                 }
             });
 
             childProcess.addEventListener(ProcessEvent.EXIT, (data) => {
                 callback({
-                    stdout,
-                    stderr,
+                    stdout:"",
+                    stderr:"",
                     exitCode: data.exitCode ?? 1
                 });
 
@@ -359,7 +351,11 @@ export class OpenWebContainer {
                 this.processManager.removeProcess(childProcess.pid);
             });
 
+
         } catch (error: any) {
+            if (childPid){
+                this.processManager.removeProcess(childPid);
+            }
             callback({
                 stdout: '',
                 stderr: error.message,
