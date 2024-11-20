@@ -34,7 +34,7 @@ export class ZenFSCore implements IFileSystem {
     listFiles(basePath:string="/"): string[] {
         const files = [];
         const items = fs.readdirSync(basePath, { withFileTypes: true });
-
+        if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
         for (const item of items) {
             if (item.isDirectory()) {
                 files.push(...this.listFiles(`${basePath}/${item.name}`));
