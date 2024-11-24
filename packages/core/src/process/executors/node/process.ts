@@ -1,25 +1,20 @@
 import { ServerType } from '../../../network/types';
 import { IFileSystem } from '../../../filesystem';
 import { Process, ProcessEvent, ProcessState, ProcessType } from '../../base';
-import { getQuickJS, QuickJSContext, QuickJSHandle, newQuickJSWASMModuleFromVariant, newQuickJSAsyncWASMModuleFromVariant } from 'quickjs-emscripten';
+import {  QuickJSContext, QuickJSHandle, newQuickJSAsyncWASMModuleFromVariant } from 'quickjs-emscripten';
 import { NetworkManager } from '../../../network/manager';
 // import variant from "@jitl/quickjs-singlefile-browser-release-sync"
 // import variant from "@jitl/quickjs-asmjs-mjs-release-sync"
 import variant from "@jitl/quickjs-singlefile-browser-release-asyncify"
-interface PendingHttpRequest {
-    resolve: (response: Response) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-}
+import { HTTPModule } from './modules/http';
+import { HostRequest, NetworkModule, statusCodeToStatusText } from './modules/network-module';
 
 export class NodeProcess extends Process {
     private fileSystem: IFileSystem;
-    private activeServers: Set<string> = new Set();
     private networkManager: NetworkManager;
-    private pendingHttpRequests: Map<string, PendingHttpRequest> = new Map();
-    private HTTP_TIMEOUT = 30000; // 30 seconds timeout for HTTP requests
+    private httpModule: QuickJSHandle|undefined;
+    private networkModule: NetworkModule|undefined; 
     private context: QuickJSContext|undefined;
-
     constructor(
         pid: number,
         executablePath: string,
@@ -71,11 +66,15 @@ export class NodeProcess extends Process {
 
             const context = runtime.newContext();
             this.context = context;
-            // setting up network interceptor
-            this.setupNetworkInterception(context); 
-
-            // setting up http handler
-            this.setupHttpHandling(context);
+            this.networkModule = new NetworkModule(context,(port:number)=>{
+                console.log('registering server',port)
+                
+                this.networkManager.registerServer(this.pid, port, 'http', { host: '0.0.0.0' })
+            },true);
+            this.httpModule =this.networkModule.createHttpModule()
+            
+            // this.context = context;
+            this.setupRequire(context);
 
             // Set up console.log and other console methods
             const consoleObj = context.newObject();
@@ -157,7 +156,7 @@ export class NodeProcess extends Process {
             } catch (error) {
                 this._exitCode = 1;
                 this._state = ProcessState.FAILED;
-                this.emit(ProcessEvent.MESSAGE, { stderr: `${error}\n` });
+                this.emit(ProcessEvent.MESSAGE, { stderr: JSON.stringify(error, null, 2) });
             } finally {
                 context.dispose();
                 // runtime.;
@@ -166,83 +165,167 @@ export class NodeProcess extends Process {
         } catch (error: any) {
             this._state = ProcessState.FAILED;
             this._exitCode = 1;
-            this.emit(ProcessEvent.ERROR, { pid: this.pid, error });
+            this.emit(ProcessEvent.ERROR, { pid: this.pid, error:JSON.stringify(error,null,2) });
             this.emit(ProcessEvent.EXIT, { pid: this.pid, exitCode: this._exitCode });
         }
     }
 
-    async handleHttpRequest(request: Request): Promise<Response> {
-        const requestId = Math.random().toString(36).substring(2);
+    private setupRequire(context:QuickJSContext) {
+        // Create the require function
+        const requireFn = context.newFunction("require", (moduleId) => {
+            const id = context.getString(moduleId)
 
-        try {
-            if(this.context === undefined) {
-                throw new Error('Context not initialized');
+            
+            // patching http module
+            if(context.getString(moduleId)==='http'&&this.networkModule){
+                this.httpModule = this.networkModule.createHttpModule()
+                return this.httpModule.dup()
             }
-            // Convert headers to a plain object
-            const headers: Record<string, string> = {};
-            request.headers.forEach((value, key) => {
-                headers[key.toLowerCase()] = value;
-            });
+            
+            
+            // If not a built-in module, try to load as a regular module
+            try {
+                // Convert the require path to a module path
+                let modulePath = id
+                if (!id.startsWith('./') && !id.startsWith('/')) {
+                    // For bare imports like 'lodash', prefix with /node_modules/
+                    modulePath = `/node_modules/${id}`
+                }
 
-            // Get the body if present
-            let body: string | undefined;
-            if (request.body) {
-                body = await request.text();
+                // Use evalCode with module type to load the module
+                const result = context.evalCode(
+                    `import('${modulePath}').then(m => m.default || m)`,
+                    'dynamic-import.js',
+                    { type: 'module' }
+                )
+
+                // Check for evaluation errors
+                if (result.error) {
+                    throw new Error(`Failed to load module ${id}: ${context.dump(result.error)}`)
+                }
+
+                // Get the promise state to handle both sync and async modules
+                const promiseState = context.getPromiseState(result.value)
+                result.value.dispose()
+
+                if (promiseState.type === 'fulfilled') {
+                    return promiseState.value
+                } else if (promiseState.type === 'rejected') {
+                    const error = context.dump(promiseState.error)
+                    promiseState.error.dispose()
+                    throw new Error(`Module load failed: ${error}`)
+                } else {
+                    throw new Error(`Module loading is pending: ${id}`)
+                }
+            } catch (error:any) {
+                // Add some context to the error
+                throw new Error(`Cannot find module '${id}': ${error.message}`)
             }
+        })
 
-            // Create a promise that will resolve with the response
-            const responsePromise = new Promise<Response>((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    const pending = this.pendingHttpRequests.get(requestId);
-                    if (pending) {
-                        pending.reject(new Error('Request timeout'));
-                        this.pendingHttpRequests.delete(requestId);
+        // Add require to the global scope
+        context.setProp(context.global, "require", requireFn)
+        requireFn.dispose()
+
+        // Also set up module and exports objects for CommonJS modules
+        const moduleObj = context.newObject()
+        const exportsObj = context.newObject()
+        context.setProp(moduleObj, "exports", exportsObj)
+        context.setProp(context.global, "module", moduleObj)
+        context.setProp(context.global, "exports", exportsObj)
+        moduleObj.dispose()
+        exportsObj.dispose()
+    }
+
+    async handleHttpRequest(request: HostRequest): Promise<Response> {
+        return new Promise((resolve, reject) => {
+            try {
+                if (this.httpModule === undefined) {
+                    reject (new Error('HTTP module not initialized'));
+                    return
+                }
+                if (this.context == undefined) {
+                    reject(new Error("No context found") )
+                    return
+                }
+                let reqObj = NetworkModule.hostRequestToHandle(this.context, {
+                    port: request.port,
+                    path: request.path,
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body
+                })
+
+                const callbackHandle = this.context.newFunction("callback", (resHandle) => {
+                    try {
+                        if(this.context==undefined){
+                            reject(new Error("No context found"))
+                            return
+                        }
+                        // log('Response received, setting up event handlers')
+                        let responseData = ''
+                        let resObj = resHandle.dup()
+                        const onHandle = this.context.getProp(resObj, "on")
+
+                        const dataListenerHandle = this.context.newFunction("dataListener", (chunkHandle) => {
+                            const chunk = this.context?.getString(chunkHandle)
+                            // log('Received data chunk', { length: chunk.length })
+                            responseData += chunk
+                        })
+
+                        const endListenerHandle = this.context.newFunction("endListener", () => {
+                            if (this.context == undefined) {
+                                reject(new Error("No context found"))
+                                return
+                            }
+                            // log('Response complete', { responseLength: responseData.length })
+                            let resObjDup = resObj.dup()
+                            let res=this.context.dump(resObjDup)
+                            resolve(new Response(responseData, {
+                                status: res.status,
+                                statusText: statusCodeToStatusText(res.status),
+                                headers: res.headers,
+                            }))
+                            dataListenerHandle?.dispose()
+                            endListenerHandle?.dispose()
+                        })
+
+                        let resObjDataDup = resObj.dup()
+                        this.context.callFunction(onHandle, resObjDataDup, [
+                            this.context.newString("data"),
+                            dataListenerHandle
+                        ])
+
+                        let resObjEndDup = resObj.dup()
+                        this.context.callFunction(onHandle, resObjEndDup, [
+                            this.context.newString("end"),
+                            endListenerHandle
+                        ])
+
+                        onHandle.dispose()
+                    } catch (error) {
+                        // log('Error in response callback', error)
+                        reject(error)
                     }
-                }, this.HTTP_TIMEOUT);
+                })
 
-                this.pendingHttpRequests.set(requestId, {
-                    resolve,
-                    reject,
-                    timeout
-                });
-            });
+                // log('Initiating request')
+                const httpHandle = this.context.getProp(this.context.global, "http")
+                const requestHandle = this.context.getProp(httpHandle, "request")
 
-            // Call the request handler in QuickJS
-            const result = this.context.evalCode(`
-                globalThis.__handleHttpRequest(
-                    ${JSON.stringify(requestId)},
-                    ${JSON.stringify(request.method)},
-                    ${JSON.stringify(request.url)},
-                    ${JSON.stringify(headers)},
-                    ${body ? JSON.stringify(body) : 'undefined'}
-                );
-            `);
+                this.context.callFunction(requestHandle, this.context.undefined, [reqObj, callbackHandle])
 
-            // Check for immediate errors
-            if (result.error) {
-                const error = this.context.dump(result.error);
-                result.error.dispose();
-                throw new Error(typeof error === 'string' ? error : 'Error handling request');
+                // Cleanup handles
+                requestHandle.dispose()
+                httpHandle.dispose()
+                callbackHandle.dispose()
+                reqObj.dispose()
+
+            } catch (error) {
+                // log('Error making request', error)
+                reject(error)
             }
-            result.value.dispose();
-
-            // Wait for the response
-            return await responsePromise;
-
-        } catch (error) {
-            // Clean up pending request
-            const pending = this.pendingHttpRequests.get(requestId);
-            if (pending) {
-                clearTimeout(pending.timeout);
-                this.pendingHttpRequests.delete(requestId);
-            }
-
-            // Return error response
-            return new Response(
-                error instanceof Error ? error.message : 'Internal Server Error',
-                { status: 500 }
-            );
-        }
+        })
     }
 
     async terminate(): Promise<void> {
@@ -255,294 +338,4 @@ export class NodeProcess extends Process {
         this._exitCode = -1;
         this.emit(ProcessEvent.EXIT, { pid: this.pid, exitCode: this._exitCode });
     }
-
-
-
-    //setup network interceptor
-    private setupNetworkInterception(context:QuickJSContext): void {
-        // Intercept Node's net module
-        context.evalCode(`
-            // Store original requires
-            const originalRequire = require;
-            
-            // Mock net module
-            const netModule = {
-                Server: function() {
-                    const eventHandlers = new Map();
-                    
-                    const server = {
-                        listening: false,
-                        
-                        listen(port, host, backlog) {
-                            const options = {
-                                port: typeof port === 'object' ? port.port : port,
-                                host: typeof port === 'object' ? port.host : host,
-                                backlog: typeof port === 'object' ? port.backlog : backlog
-                            };
-
-                            const serverId = globalThis.__registerServer('tcp', options.port, {
-                                host: options.host,
-                                backlog: options.backlog
-                            });
-
-                            this.listening = true;
-                            if (eventHandlers.has('listening')) {
-                                eventHandlers.get('listening').forEach(handler => handler());
-                            }
-
-                            return this;
-                        },
-
-                        on(event, handler) {
-                            if (!eventHandlers.has(event)) {
-                                eventHandlers.set(event, new Set());
-                            }
-                            eventHandlers.get(event).add(handler);
-                            return this;
-                        },
-
-                        once(event, handler) {
-                            const wrapper = (...args) => {
-                                handler(...args);
-                                this.removeListener(event, wrapper);
-                            };
-                            return this.on(event, wrapper);
-                        },
-
-                        removeListener(event, handler) {
-                            const handlers = eventHandlers.get(event);
-                            if (handlers) {
-                                handlers.delete(handler);
-                            }
-                            return this;
-                        },
-
-                        close(callback) {
-                            this.listening = false;
-                            if (callback) callback();
-                            return this;
-                        }
-                    };
-
-                    return server;
-                }
-            };
-
-            // Mock http module
-            const httpModule = {
-                Server: function() {
-                    const server = new netModule.Server();
-                    
-                    // Add http-specific methods
-                    server.setTimeout = function() { return this; };
-                    
-                    return server;
-                },
-                
-                createServer: function(handler) {
-                    const server = new this.Server();
-                    if (handler) {
-                        server.on('request', handler);
-                    }
-                    return server;
-                }
-            };
-
-            // Override require for network modules
-            globalThis.require = function(module) {
-                switch(module) {
-                    case 'net':
-                        return netModule;
-                    case 'http':
-                        return httpModule;
-                    default:
-                        return originalRequire(module);
-                }
-            };
-        `);
-        // Register helper functions
-        const registerServer = context.newFunction(
-            "__registerServer",
-            (typeHandle: QuickJSHandle, portHandle: QuickJSHandle, optionsHandle: QuickJSHandle) => {
-                try {
-                    // Convert the arguments from QuickJS handles to native types
-                    const type = context.getString(typeHandle) as ServerType;
-                    const port = context.getNumber(portHandle);
-                    const options = optionsHandle ? context.dump(optionsHandle) : {};
-
-                    const serverId = this.networkManager.registerServer(
-                        this.pid,
-                        port,
-                        type,
-                        options
-                    );
-                    this.activeServers.add(serverId);
-                    return context.newString(serverId);
-                } catch (error) {
-                    throw context.newError(error instanceof Error ? error.message : 'Server registration failed');
-                }
-            }
-        );
-
-        context.setProp(context.global, "__registerServer", registerServer);
-        registerServer.dispose();
-    }
-
-    private setupHttpHandling(context: QuickJSContext): void {
-        // Add response handler function to runtime
-        const handleHttpResponse = context.newFunction(
-            "__handleHttpResponse",
-            (
-                requestIdHandle: QuickJSHandle,
-                statusHandle: QuickJSHandle,
-                headersHandle: QuickJSHandle,
-                bodyHandle: QuickJSHandle
-            ) => {
-                try {
-                    const requestId = context.getString(requestIdHandle);
-                    const pending = this.pendingHttpRequests.get(requestId);
-
-                    if (!pending) {
-                        console.warn(`No pending request found for ID: ${requestId}`);
-                        return;
-                    }
-
-                    // Clear timeout
-                    clearTimeout(pending.timeout);
-
-                    // Convert response data from QuickJS
-                    const status = context.getNumber(statusHandle);
-                    const headers = context.dump(headersHandle) as Record<string, string>;
-                    const body = bodyHandle ? context.getString(bodyHandle) : '';
-
-                    // Create and send response
-                    const response = new Response(body, {
-                        status,
-                        headers
-                    });
-
-                    pending.resolve(response);
-                    this.pendingHttpRequests.delete(requestId);
-                } catch (error) {
-                    console.error('Error handling HTTP response:', error);
-                }
-            }
-        );
-
-        context.setProp(context.global, "__handleHttpResponse", handleHttpResponse);
-        handleHttpResponse.dispose();
-
-        // Inject request handling code into the runtime
-        context.evalCode(`
-            // Create a map to store server request handlers
-            globalThis.__httpRequestHandlers = new Map();
-
-            // Function to register a handler for a port
-            globalThis.__registerHttpHandler = function(port, handler) {
-                __httpRequestHandlers.set(port, handler);
-            };
-
-            // Function to handle incoming HTTP requests
-            globalThis.__handleHttpRequest = function(requestId, method, url, headers, body) {
-                const parsedUrl = new URL(url, 'http://localhost');
-                const port = parseInt(parsedUrl.port || '80');
-                
-                const handler = __httpRequestHandlers.get(port);
-                if (!handler) {
-                    __handleHttpResponse(
-                        requestId,
-                        404,
-                        {'Content-Type': 'text/plain'},
-                        'No handler for port ' + port
-                    );
-                    return;
-                }
-
-                // Create req object
-                const req = {
-                    method,
-                    url: parsedUrl.pathname + parsedUrl.search,
-                    headers: headers,
-                    body: body,
-                    rawBody: body,
-                    
-                    // Common Express/Node.js properties
-                    originalUrl: parsedUrl.pathname + parsedUrl.search,
-                    query: Object.fromEntries(parsedUrl.searchParams),
-                    params: {},
-                    path: parsedUrl.pathname,
-                    
-                    get(header) {
-                        return headers[header.toLowerCase()];
-                    }
-                };
-
-                // Create res object
-                const res = {
-                    _headers: {},
-                    _status: 200,
-                    _body: null,
-                    
-                    status(code) {
-                        this._status = code;
-                        return this;
-                    },
-                    
-                    set(header, value) {
-                        this._headers[header.toLowerCase()] = value;
-                        return this;
-                    },
-                    
-                    get(header) {
-                        return this._headers[header.toLowerCase()];
-                    },
-                    
-                    json(data) {
-                        this._headers['content-type'] = 'application/json';
-                        this._body = JSON.stringify(data);
-                        this.end();
-                    },
-                    
-                    send(data) {
-                        if (typeof data === 'string') {
-                            this._headers['content-type'] = 'text/plain';
-                            this._body = data;
-                        } else if (Buffer.isBuffer(data)) {
-                            this._headers['content-type'] = 'application/octet-stream';
-                            this._body = data.toString('utf-8');
-                        } else {
-                            this._headers['content-type'] = 'application/json';
-                            this._body = JSON.stringify(data);
-                        }
-                        this.end();
-                    },
-                    
-                    end(data) {
-                        if (data !== undefined) {
-                            this._body = data;
-                        }
-                        __handleHttpResponse(
-                            requestId,
-                            this._status,
-                            this._headers,
-                            this._body
-                        );
-                    }
-                };
-
-                // Call the handler
-                try {
-                    handler(req, res);
-                } catch (error) {
-                    __handleHttpResponse(
-                        requestId,
-                        500,
-                        {'Content-Type': 'text/plain'},
-                        error.message
-                    );
-                }
-            };
-        `);
-    }
-
 }

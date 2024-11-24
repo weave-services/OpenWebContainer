@@ -10,7 +10,7 @@ import { FolderOpen, Terminal as TerminalIcon, Code, Loader2, Save } from "lucid
 import { useShell } from "./hooks/useShell";
 
 export default function App() {
-	const { ready: containerReady, container } = useContainer();
+	const { ready: containerReady, container,servers } = useContainer();
 	const {
 		ready: shellReady,
 		output,
@@ -138,6 +138,8 @@ export default function App() {
 				<div className="flex items-center space-x-2">
 					<Code className="h-5 w-5 text-blue-400" />
 					<h1 className="text-white font-semibold">Web IDE</h1>
+					<span className="text-white font-semibold">running servers: {servers?.length}</span>
+					
 				</div>
 				<div className="flex space-x-4">
 					{/* Standard menu */}

@@ -38,6 +38,41 @@ export interface WorkerInitOptions {
     debug?: boolean;
     memoryLimit?: number;
 }
+export interface HttpRequestPayload {
+    id: string;
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+    path:string;
+    hostname?:string;
+}
+
+export interface HttpResponsePayload {
+    id: string;
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    body?: string;
+}
+
+export interface NetworkErrorPayload {
+    id: string;
+    error: string;
+}
+
+export interface GetServersResponsePayload {
+    ports: number[];
+}
+
+export interface ServerListenPayload {
+    port: number;
+}
+
+export interface ServerClosePayload {
+    port: number;
+}
+
 
 export interface FileSystemPayload {
     writeFile: {
@@ -87,6 +122,8 @@ export type WorkerRequestMessage =
     | { type: 'createDirectory'; payload: FileSystemPayload['createDirectory']; }
     | { type: 'listDirectory'; payload: FileSystemPayload['listDirectory']; }
     | { type: 'deleteDirectory'; payload: FileSystemPayload['deleteDirectory']; }
+    | { type: 'httpRequest'; payload: { request: HttpRequestPayload; port: number } }
+    | { type: 'listServers' }
     ;
 
 
@@ -94,9 +131,9 @@ export type WorkerResponseMessage =
     | { type: 'success' }
     | { type: 'initialized' }
     | { type: 'spawned'; payload: SpawnedPayload }
-    | { type: 'inputWritten';}
+    | { type: 'inputWritten'; }
     | { type: 'terminated'; payload: ProcessExitPayload; }
-    | { type: 'disposed';}
+    | { type: 'disposed'; }
     | {
         type: 'stats'; payload: {
             network: any;
@@ -106,7 +143,8 @@ export type WorkerResponseMessage =
                 state: string;
                 uptime: number | null;
             }[];
-        } }
+        }
+    }
     | { type: 'fileWritten'; }
     | { type: 'fileRead'; payload: { content: string } }
     | { type: 'fileDeleted'; }
@@ -118,7 +156,13 @@ export type WorkerResponseMessage =
     | { type: 'processOutput'; payload: ProcessOutputPayload }
     | { type: 'processExit'; payload: ProcessExitPayload }
     | { type: 'processError'; payload: ProcessErrorPayload }
+    // network responses
+    | { type: 'httpResponse'; payload: { response: HttpResponsePayload, port: number } }
+    | { type: 'networkError'; payload: { response: NetworkErrorPayload; port: number } }
+    | { type: 'serverList'; payload: GetServersResponsePayload }
+    | { type: 'onServerListen'; payload: ServerListenPayload }
+    | { type: 'onServerClose'; payload: ServerClosePayload }
 
 
-export type WorkerMessage = WorkerMessageBase&(WorkerRequestMessage | WorkerResponseMessage);
+export type WorkerMessage = WorkerMessageBase & (WorkerRequestMessage | WorkerResponseMessage);
 export type WorkerResponse = WorkerMessageBase & WorkerResponseMessage;

@@ -8,6 +8,7 @@ import { ZenFSCore } from "./filesystem/zenfs-core";
 import { NetworkManager } from "network/manager";
 import { ServerType, VirtualServer } from "./network/types";
 import { NetworkStats } from "./network/types";
+import { HostRequest } from "process/executors/node/modules/network-module";
 
 
 interface ProcessEventData {
@@ -67,7 +68,7 @@ export class OpenWebContainer {
     /**
      * Network Operations
      */
-    async handleHttpRequest(request: Request, port: number): Promise<Response> {
+    async handleHttpRequest(request: HostRequest, port: number): Promise<Response> {
         this.debugLog(`HTTP Request: ${request.method} ${request.url} (Port: ${port})`);
         try {
             const response = await this.networkManager.handleRequest(request, port);

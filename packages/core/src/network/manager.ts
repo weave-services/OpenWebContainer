@@ -1,3 +1,4 @@
+import { HostRequest } from "process/executors/node/modules/network-module";
 import { NodeProcess, Process } from "../process";
 import { NetworkStats, ServerStats, ServerType, SocketConnection, VirtualServer } from "./types";
 
@@ -178,7 +179,7 @@ export class NetworkManager {
         }));
     }
 
-    async handleRequest(request: Request, port: number): Promise<Response> {
+    async handleRequest(request: HostRequest, port: number): Promise<Response> {
         const server = this.getServer(port, 'http');
         if (!server || server.status !== 'running') {
             return new Response('Service Unavailable', { status: 503 });
@@ -188,19 +189,23 @@ export class NetworkManager {
         if (!process || !(process instanceof NodeProcess)) {
             return new Response('Internal Server Error', { status: 500 });
         }
+        if(!request.url){
+            request.url=request.path||"/"
+        }
 
         //// network statistics start
         const serverId = this.getServerId(port);
         const startTime = Date.now();
         let bytesReceived = 0;
         let bytesSent = 0;
+
         // Calculate request size
         bytesReceived += request.url.length;
-        request.headers.forEach((value, key) => {
+        Object.entries(request.headers||{}).forEach(([key, value]) => {
             bytesReceived += key.length + value.length;
         });
         if (request.body) {
-            const body = await request.clone().text();
+            const body =request.body; 
             bytesReceived += body.length;
         }
 
@@ -210,7 +215,15 @@ export class NetworkManager {
 
             // actual request handling
             this.stats.totalRequests++;
-            const response = await process.handleHttpRequest(request);
+            let headers:Record<string,string>={}
+            const response = await process.handleHttpRequest({
+                port: port,
+                path: request.path,
+                url: request.url,
+                method: request.method,
+                headers: request.headers,
+                body: request.body
+            });
 
 
             //// network statistics start

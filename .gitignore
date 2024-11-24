@@ -45,3 +45,8 @@ lerna-debug.log*
 .cache
 
 *.tsbuildinfo
+.vercel
+
+# experiments
+ignore/
+experiments/

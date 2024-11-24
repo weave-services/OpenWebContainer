@@ -241,6 +241,60 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
                 });
             }
             break;
+        
+        case 'listServers':
+            try {
+                const servers = container.listServers();
+                sendWorkerResponse({
+                    type: 'serverList',
+                    id,
+                    payload: servers
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'error',
+                    id,
+                    payload: { error: error.message }
+                });
+            }
+        break;
+        case 'httpRequest':
+            try {
+                const { id, request, port } = e.data.payload;
+                const { id:reqId,method, url, headers, body,path } = request;
+                const response = await container.handleHttpRequest({
+                    hostname:'localhost',
+                    port,
+                    path,
+                    url,
+                    method,
+                    headers,
+                    body,
+                },port);
+                sendWorkerResponse({
+                    type: 'httpResponse',
+                    id,
+                    payload: {
+                        response: {
+                            id: reqId,
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: Object.fromEntries((response.headers as any).entries()),
+                            body: await response.text()
+                        },
+                        port
+                    }
+                });
+            }
+            catch (error: any) {
+                sendWorkerResponse({
+                    type: 'networkError',
+                    id,
+                    payload: { id: e.data?.payload?.id, error: error.message }
+                });
+            }
+            break;
     }
 };
 

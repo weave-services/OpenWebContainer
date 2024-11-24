@@ -3,9 +3,11 @@ import { VirtualProcess } from '../process/process';
 import { ContainerOptions, ContainerStats } from './types';
 import { ProcessOptions } from '../process/types';
 import { ProcessEvent } from '../process/types';
+import { HostRequest, IframeBridge } from '../iframe/bridge';
 
 export class ContainerManager {
     private worker: WorkerBridge;
+    private iframeBridge?: IframeBridge;
     private processes: Map<number, VirtualProcess>;
     private options: ContainerOptions;
     private ready: Promise<void>;
@@ -140,7 +142,7 @@ export class ContainerManager {
             this.processes.set(process.pid, process);
             return process;
 
-        } catch (error:any) {
+        } catch (error: any) {
             throw new Error(`Failed to spawn process: ${error.message}`);
         }
     }
@@ -173,7 +175,7 @@ export class ContainerManager {
             type: 'getStats'
         });
 
-        if(response.type==='stats'){
+        if (response.type === 'stats') {
             return response.payload;
         }
         throw new Error("Invalid response type")
@@ -243,7 +245,7 @@ export class ContainerManager {
             type: 'readFile',
             payload: { path }
         });
-        if(response.type!=='fileRead'){
+        if (response.type !== 'fileRead') {
             throw new Error("Invalid response type");
         }
         return response.payload.content.toString();
@@ -260,7 +262,7 @@ export class ContainerManager {
                 type: 'deleteFile',
                 payload: { path, recursive }
             });
-        } catch (error:any) {
+        } catch (error: any) {
             throw new Error(`Failed to delete file: ${error.message}`);
         }
     }
@@ -277,11 +279,11 @@ export class ContainerManager {
                 type: 'listFiles',
                 payload: { path }
             });
-            if(result.type!=='fileList'){
+            if (result.type !== 'fileList') {
                 throw new Error("Invalid response type");
             }
             return result.payload.files;
-        } catch (error:any) {
+        } catch (error: any) {
             throw new Error(`Failed to list files: ${error.message}`);
         }
     }
@@ -298,7 +300,7 @@ export class ContainerManager {
                 type: 'createDirectory',
                 payload: { path }
             });
-        } catch (error:any) {
+        } catch (error: any) {
             throw new Error(`Failed to create directory: ${error.message}`);
         }
     }
@@ -315,13 +317,96 @@ export class ContainerManager {
                 type: 'listDirectory',
                 payload: { path }
             });
-            if(result.type!=='directoryList'){
+            if (result.type !== 'directoryList') {
                 throw new Error("Invalid response type");
             }
             return result.payload.directories;
-        } catch (error:any) {
+        } catch (error: any) {
             throw new Error(`Failed to list directory: ${error.message}`);
         }
+    }
+
+    /**
+     * Network Operations
+     */
+    async handleHttpRequest(request: HostRequest, port: number): Promise<Response> {
+        const id = crypto.randomUUID();
+
+        try {
+            // Convert headers to plain object
+            const headers: Record<string, string> = request.headers||{};
+
+            // Get body if present
+            let body: string | undefined;
+            if (request.body) {
+                body = await request.body;
+            }
+
+            const response = await this.worker.sendMessage({
+                type: 'httpRequest',
+                payload: {
+                    request: {
+                        id,
+                        method: request.method,
+                        url: request.url,
+                        headers,
+                        body,
+                        port,
+                        hostname:'localhost'
+                    },
+                    port
+                }
+            });
+
+            if (response.type === 'networkError') {
+                throw new Error(response.payload.response.error);
+            }
+            if (response.type === 'httpResponse') {
+                let resData=response.payload.response;
+                return new Response(resData.body, {
+                    status: resData.status,
+                    statusText: resData.statusText,
+                    headers: resData.headers
+                });
+            }
+            throw new Error(`Invalid response type: ${response.type}`);
+        } catch (error: any) {
+            throw new Error(`HTTP request failed: ${error.message}`);
+        }
+    }
+
+    async listActiveServers() {
+        try {
+            const response = await this.worker.sendMessage({
+                type: 'listServers'
+            });
+            if (response.type === 'serverList') {
+                return response.payload;
+            }
+            throw new Error(`Invalid response type: ${response.type}`);
+        } catch (error: any) {
+            throw new Error(`List server failed: ${error.message}`);
+        }
+
+    }
+
+    /**
+     * Preview 
+     */
+    createPreview(options: {
+        port: number;
+        styles?: Partial<CSSStyleDeclaration>;
+    }) {
+        if (this.iframeBridge) {
+            this.iframeBridge.dispose();
+        }
+
+        this.iframeBridge = new IframeBridge({
+            port: options.port,
+            onRequest: (req)=>this.handleHttpRequest(req,options.port), 
+            styles: options.styles
+        });
+        return this.iframeBridge;
     }
 
     /**
