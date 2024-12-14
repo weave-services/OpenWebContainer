@@ -309,7 +309,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 - Create an issue for bug reports or feature requests
-- Join our [Discussion Forum](https://github.com/thecodacus/OpenWebContainer/discussions)
+
 
 ## Similar Projects
 - [Nano Web IDE](https://github.com/anbraten/nano-web-ide)
