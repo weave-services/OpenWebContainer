@@ -138,7 +138,7 @@ export default function App() {
 				<div className="flex items-center space-x-2">
 					<Code className="h-5 w-5 text-blue-400" />
 					<h1 className="text-white font-semibold">Web IDE</h1>
-					<span className="text-white font-semibold">running servers: {servers?.length}</span>
+					<span className="text-white font-semibold">running servers: {servers.length}</span>
 					
 				</div>
 				<div className="flex space-x-4">

@@ -14,7 +14,14 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
         case 'initialize':
             let { payload } = e.data;
             // Initialize container when worker starts
-            container = new OpenWebContainer({ debug: payload.debug });
+            container = new OpenWebContainer({ debug: payload.debug,
+                onServerListen:(port)=>{
+                    sendWorkerResponse({ type: 'onServerListen', id, payload:{port} });
+                },
+                onServerClose:(port)=>{
+                    sendWorkerResponse({ type: 'onServerClose', id, payload:{port} });
+                }
+             });
             // Send back confirmation
             sendWorkerResponse({ type: 'initialized', id });
             break;
@@ -121,7 +128,7 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
 
         case 'writeFile':
             try {
-                const { pid, path, content } = e.data.payload;
+                const { path, content } = e.data.payload;
                 await container.writeFile(path, content);
                 sendWorkerResponse({
                     type: 'fileWritten',
@@ -138,12 +145,12 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             break;
         case 'readFile':
             try {
-                const { pid, path } = e.data.payload;
+                const {  path } = e.data.payload;
                 const content = await container.readFile(path);
                 sendWorkerResponse({
                     type: 'fileRead',
                     id,
-                    payload: { content }
+                    payload: { content: content ||'' }
                 });
             }
             catch (error: any) {
@@ -156,7 +163,7 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             break;
         case 'deleteFile':
             try {
-                const { pid, path, recursive } = e.data.payload;
+                const { path, recursive } = e.data.payload;
                 await container.deleteFile(path);
                 sendWorkerResponse({
                     type: 'fileDeleted',
@@ -173,7 +180,7 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             break;
         case 'listFiles':
             try {
-                const { pid, path } = e.data.payload;
+                const { path } = e.data.payload;
                 const files = await container.listFiles(path);
                 sendWorkerResponse({
                     type: 'fileList',
@@ -191,7 +198,7 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             break;
         case 'createDirectory':
             try {
-                const { pid, path } = e.data.payload;
+                const {  path } = e.data.payload;
                 await container.createDirectory(path);
                 sendWorkerResponse({
                     type: 'directoryCreated',
@@ -208,12 +215,12 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             break;
         case 'listDirectory':
             try {
-                const { pid, path } = e.data.payload;
+                const {  path } = e.data.payload;
                 const files = await container.listDirectory(path);
                 sendWorkerResponse({
                     type: 'directoryList',
                     id,
-                    payload: { files }
+                    payload: { directories: files }
                 });
             }
             catch (error: any) {
@@ -226,7 +233,7 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             break;
         case 'deleteDirectory':
             try {
-                const { pid, path } = e.data.payload;
+                const { path } = e.data.payload;
                 await container.deleteDirectory(path);
                 sendWorkerResponse({
                     type: 'directoryDeleted',
@@ -248,7 +255,7 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
                 sendWorkerResponse({
                     type: 'serverList',
                     id,
-                    payload: servers
+                    payload: {ports:servers.map(s=>s.port) }
                 });
             }
             catch (error: any) {
@@ -260,9 +267,9 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
             }
         break;
         case 'httpRequest':
+            const { request, port } = e.data.payload;
+            const { id:reqId,method, url, headers, body,path } = request;
             try {
-                const { id, request, port } = e.data.payload;
-                const { id:reqId,method, url, headers, body,path } = request;
                 const response = await container.handleHttpRequest({
                     hostname:'localhost',
                     port,
@@ -291,7 +298,9 @@ self.onmessage = async function (e: MessageEvent<WorkerMessage>) {
                 sendWorkerResponse({
                     type: 'networkError',
                     id,
-                    payload: { id: e.data?.payload?.id, error: error.message }
+                    payload: { port, response:{
+                        id: reqId, error: error.message
+                    } }
                 });
             }
             break;
@@ -334,7 +343,7 @@ function setupProcessHandlers(process: Process) {
                 type: 'processOutput',
                 payload: {
                     pid: process.pid,
-                    output: data.stdout || data.stderr,
+                    output: data.stdout || data.stderr||"",
                     isError: !!data.stderr
                 }
             });
@@ -346,7 +355,7 @@ function setupProcessHandlers(process: Process) {
             type: 'processExit',
             payload: {
                 pid: process.pid,
-                exitCode: data.exitCode
+                exitCode: data.exitCode||0
             }
         });
     });

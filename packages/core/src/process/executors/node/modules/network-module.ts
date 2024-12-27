@@ -43,11 +43,15 @@ export class NetworkModule {
     private nextSocketId: number = 1
     private debug: boolean = false
     private onServerListen: (port: number) => void
+    private onServerCrash: (port: number) => void
+    private onServerClose: (port: number) => void
 
-    constructor(context: QuickJSContext, onServerListen: (port: number) => void, debug: boolean = false) {
+    constructor(context: QuickJSContext, onServerListen: (port: number) => void,onServerClose: (port: number) => void, debug: boolean = false) {
         this.context = context
         this.debug = debug
         this.onServerListen = onServerListen
+        this.onServerClose = onServerClose
+        this.onServerCrash = onServerClose
     }
 
     private log(scope: string, message: string, data?: any) {
@@ -203,10 +207,11 @@ export class NetworkModule {
             const serverObj = this.context.newObject()
             const serverHandlerHandle = handlerHandle.dup()
             let serverObjDup = serverObj.dup()
+            let serverKey:string|undefined
             const listenHandle = this.context.newFunction("listen", (portHandle, callbackHandle) => {
                 const port = this.context.getNumber(portHandle)
                 const host = 'localhost'
-                const serverKey = `${host}:${port}`
+                serverKey = `${host}:${port}`
 
                 this.log('listen', `HTTP server listening on ${serverKey}`)
 
@@ -221,9 +226,11 @@ export class NetworkModule {
                         try {
                             let reqDup = reqObj.dup()
                             let resDup = resObj.dup()
-                            this.context.callFunction(serverHandlerHandle, this.context.undefined, [reqDup, resDup])
+                            let serverHandlerHandleDup = serverHandlerHandle.dup()
+                            this.context.callFunction(serverHandlerHandleDup, this.context.undefined, [reqDup, resDup])
                         } catch (error) {
                             this.log('requestHandler', 'Error in request handler', error)
+                            this.onServerCrash(port)
                         } finally {
                             reqObj.dispose()
                             resObj.dispose()
@@ -235,28 +242,44 @@ export class NetworkModule {
                     try {
                         this.log('listen', 'Executing server listen callback')
                         let callbackHandleDup = callbackHandle.dup()
-
-                        this.context.callFunction(callbackHandleDup, serverObjDup, [])
+                        let serverObjCallbackDup = serverObjDup.dup()
+                        this.context.callFunction(callbackHandleDup, serverObjCallbackDup.dup(), [])
                     } catch (error) {
                         this.log('listen', "Error Executing Listen Callback: ", error)
                     }
                 }
                 this.log('listen', 'Emit Server Registar Event')
                 this.onServerListen(port)
-                return serverObj
+                this.log('listen', 'Server Registar Event Emitted')
+                this.log('listen', 'Returning server object')
+                return serverObjDup
             })
 
             this.context.setProp(serverObj, "listen", listenHandle)
             listenHandle.dispose()
 
             const closeHandle = this.context.newFunction("close", (callbackHandle) => {
+                if(serverKey==undefined){
+                    this.log('close', 'Server Not started')
+                    throw new Error('Server not started')
+                }
+                let server = this.servers.get(serverKey)
+                if(server==undefined){
+                    this.log('close', 'Server not found')
+                    throw new Error('Server not found')
+                }
                 this.log('close', 'Closing HTTP server')
                 serverHandlerHandle.dispose()
 
                 if (callbackHandle && callbackHandle !== this.context.undefined) {
-                    this.context.callFunction(callbackHandle, serverObj, [])
+                    let callbackHandleDup = callbackHandle.dup()
+                    let serverObjCallbackDup = serverObjDup.dup()
+                    this.context.callFunction(callbackHandleDup, serverObjCallbackDup.dup(), [])
                 }
-                return serverObj
+                
+                this.onServerClose(server.port)
+                this.log('close', 'Returning server object')
+                return serverObjDup
             })
             this.context.setProp(serverObj, "close", closeHandle)
             closeHandle.dispose()

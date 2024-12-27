@@ -70,7 +70,9 @@ export class NodeProcess extends Process {
                 console.log('registering server',port)
                 
                 this.networkManager.registerServer(this.pid, port, 'http', { host: '0.0.0.0' })
-            },true);
+            }, (port: number) => {
+                this.networkManager.unregisterServer(port, 'http')
+            }, true);
             this.httpModule =this.networkModule.createHttpModule()
             
             // this.context = context;

@@ -21,7 +21,8 @@ interface ProcessEventData {
 
 export interface ContainerOptions {
     debug?: boolean;
-
+    onServerListen?: (port: number) => void;
+    onServerClose?: (port: number) => void;
 }
 
 export interface SpawnOptions {
@@ -45,7 +46,17 @@ export class OpenWebContainer {
         this.processManager = new ProcessManager();
         this.processRegistry = new ProcessRegistry();
         this.networkManager = new NetworkManager({
-            getProcess: (pid: number) => this.processManager.getProcess(pid)
+            getProcess: (pid: number) => this.processManager.getProcess(pid),
+            onServerListen:(port)=>{
+                if (options.onServerListen) {
+                    options.onServerListen(port);
+                }
+            },
+            onServerClose:(port)=>{
+                if (options.onServerClose) {
+                    options.onServerClose(port);
+                }
+            }
         });
 
         // Register default process executors
@@ -88,9 +99,9 @@ export class OpenWebContainer {
         return this.networkManager.registerServer(pid, port, type, options);
     }
 
-    unregisterServer(serverId: string): void {
-        this.debugLog(`Unregistering server ${serverId}`);
-        this.networkManager.unregisterServer(serverId);
+    unregisterServer(port: number, type: ServerType): void {
+        this.debugLog(`Unregistering server ${type}:${port}`);
+        this.networkManager.unregisterServer(port, type);
     }
 
     getNetworkStats(): NetworkStats {
@@ -374,7 +385,7 @@ export class OpenWebContainer {
 
         // Stop all network servers
         for (const server of this.listServers()) {
-            this.networkManager.unregisterServer(`${server.type}:${server.port}`);
+            this.networkManager.unregisterServer(server.port, server.type);
         }
 
         // Kill all processes

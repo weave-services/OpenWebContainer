@@ -20,14 +20,23 @@ export function useContainer() {
         }
     }, [ready]);
     useEffect(() => {
-        containerRef.current = new ContainerManager();
+        containerRef.current = new ContainerManager({
+            onServerListen: (port) => {
+                console.log('Server listening on port', port);
+                setServers(Array.from(new Set([...servers, port])));
+            },
+            onServerClose: (port) => {
+                console.log('Server closed on port', port);
+                setServers(servers.filter((s) => s !== port));
+            }
+        });
         containerRef.current.waitForReady().then(() => {
             setReady(true);
         });
 
-        // return () => {
-        //     containerRef.current?.dispose();
-        // };
+        return () => {
+            containerRef.current?.dispose();
+        };
     }, []);
 
     return {

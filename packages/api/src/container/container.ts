@@ -13,6 +13,8 @@ export class ContainerManager {
     private ready: Promise<void>;
     private _isReady: boolean = false;
     private _disposed: boolean = false;
+    private onServerListen?: (port: number) => void;
+    private onServerClose?: (port: number) => void;
 
     constructor(options: ContainerOptions = {}) {
         this.options = {
@@ -25,6 +27,8 @@ export class ContainerManager {
         this.processes = new Map();
         this.worker = new WorkerBridge();
         this.ready = this.initialize();
+        this.onServerListen = options.onServerListen;
+        this.onServerClose = options.onServerClose;
     }
 
     waitForReady(): Promise<void> {
@@ -92,6 +96,16 @@ export class ContainerManager {
                 // Handle container-level errors
                 if (this.options.debug) {
                     console.error('Container error:', message.payload.error);
+                }
+                break;
+            case 'onServerListen':
+                if(this.options.onServerListen){
+                    this.options.onServerListen(message.payload.port)
+                }
+                break;
+            case 'onServerClose':
+                if(this.options.onServerClose){
+                    this.options.onServerClose(message.payload.port)
                 }
                 break;
         }

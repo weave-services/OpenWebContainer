@@ -15,7 +15,6 @@ export type SpawnPayload = {
 
 export type SpawnedPayload = {
     pid: number;
-    command: string;
 };
 
 export type ProcessOutputPayload = {
@@ -104,7 +103,6 @@ export interface FileSystemPayload {
 // Worker Message Types
 export interface WorkerMessageBase {
     type: string;
-    payload?: any;
     id?: string;
 }
 

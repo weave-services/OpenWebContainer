@@ -2,6 +2,8 @@ export interface ContainerOptions {
     debug?: boolean;
     maxProcesses?: number;
     memoryLimit?: number;
+    onServerListen?: (port: number) => void;
+    onServerClose?: (port: number) => void;
 }
 
 export interface ContainerStats {

@@ -5,6 +5,8 @@ import { NetworkStats, ServerStats, ServerType, SocketConnection, VirtualServer 
 
 export interface NetworkManagerOptions {
     getProcess: (pid: number) => Process | undefined;
+    onServerListen?: (port: number) => void;
+    onServerClose?: (port: number) => void;
 }
 
 export class NetworkManager {
@@ -12,6 +14,8 @@ export class NetworkManager {
     private serverStats: Map<string, ServerStats> = new Map();
     private connections: Map<string, SocketConnection> = new Map();
     private getProcess: (pid: number) => Process | undefined;
+    private onServerListen?: (port: number) => void;
+    private onServerClose?: (port: number) => void;
     private requestLog: {
         timestamp: number;
         duration: number;
@@ -33,6 +37,8 @@ export class NetworkManager {
     constructor(options: NetworkManagerOptions) {
         this.getProcess = options.getProcess;
         setInterval(() => this.cleanupRequestLog(), 60000); // Every minute
+        this.onServerListen = options.onServerListen;
+        this.onServerClose = options.onServerClose;
     }
 
     private cleanupRequestLog(): void {
@@ -68,17 +74,25 @@ export class NetworkManager {
             connections: 0,
             startTime: new Date()
         });
+        if(this.onServerListen){
+            this.onServerListen(port)
+        }
+        
 
         return serverId;
     }
 
-    unregisterServer(serverId: string): void {
+    unregisterServer(port: number, type: ServerType): void {
+        const serverId = this.getServerId(port, type);
         this.servers.delete(serverId);
         // Close all connections for this server
         for (const [connId, conn] of this.connections.entries()) {
             if (conn.serverId === serverId) {
                 this.connections.delete(connId);
                 this.stats.activeConnections--;
+                if(this.onServerClose){
+                    this.onServerClose(port)
+                }
             }
         }
     }
