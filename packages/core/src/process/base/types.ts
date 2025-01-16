@@ -1,5 +1,3 @@
-
-
 /**
  * Process states
  */

@@ -1,4 +1,3 @@
-
 export class BrowserEventEmitter {
     private events: Record<string, Function[]> = {};
     private maxListeners: number = 10;
