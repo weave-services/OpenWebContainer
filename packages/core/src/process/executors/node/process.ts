@@ -172,59 +172,58 @@ export class NodeProcess extends Process {
         }
     }
 
-    private setupRequire(context:QuickJSContext) {
+      private setupRequire(context: QuickJSContext) {
         // Create the require function
-        const requireFn = context.newFunction("require", (moduleId) => {
-            const id = context.getString(moduleId)
-
-            
+        const requireFn = context.newFunction("require", (moduleIdHandle) => {
+            const moduleId = context.getString(moduleIdHandle);
             // patching http module
-            if(context.getString(moduleId)==='http'&&this.networkModule){
+            if(context.getString(moduleIdHandle)==='http'&&this.networkModule){
                 this.httpModule = this.networkModule.createHttpModule()
                 return this.httpModule.dup()
             }
-            
-            
             // If not a built-in module, try to load as a regular module
             try {
                 // Convert the require path to a module path
-                let modulePath = id
-                if (!id.startsWith('./') && !id.startsWith('/')) {
-                    // For bare imports like 'lodash', prefix with /node_modules/
-                    modulePath = `/node_modules/${id}`
+                let modulePath = moduleId
+                if (!moduleId.startsWith('./') && !moduleId.startsWith('/')) {
+                    // resolve using modified logic
+                    modulePath = this.fileSystem.resolveModulePath(moduleId,this.cwd||'/') as unknown as string;
+                }
+                else{
+                    modulePath = this.fileSystem.resolveModulePath(moduleId,this.cwd||'/') as unknown as string;
                 }
 
                 // Use evalCode with module type to load the module
-                const result = context.evalCode(
-                    `import('${modulePath}').then(m => m.default || m)`,
-                    'dynamic-import.js',
-                    { type: 'module' }
-                )
+                const code = this.fileSystem.readFile(modulePath) as string;
+                const wrappedCode = `
+                    var exports = {};
+                    var module = { exports: exports };  // Create module object
+                    (function(module, exports, __filename, __dirname, require) {
+                        ${code}
+                    })(module, exports, '${modulePath}', '${this.fileSystem.normalizePath(this.fs.path.dirname(modulePath))}',require);
+                    return module.exports;
+                `;
+
+                const result = context.evalCode(wrappedCode, modulePath,{type: 'module'});
 
                 // Check for evaluation errors
                 if (result.error) {
-                    throw new Error(`Failed to load module ${id}: ${context.dump(result.error)}`)
+                    throw new Error(`Failed to load module ${moduleId}: ${context.dump(result.error)}`)
                 }
 
                 // Get the promise state to handle both sync and async modules
-                const promiseState = context.getPromiseState(result.value)
-                result.value.dispose()
-
-                if (promiseState.type === 'fulfilled') {
-                    return promiseState.value
-                } else if (promiseState.type === 'rejected') {
-                    const error = context.dump(promiseState.error)
-                    promiseState.error.dispose()
-                    throw new Error(`Module load failed: ${error}`)
-                } else {
-                    throw new Error(`Module loading is pending: ${id}`)
-                }
+                
+                return result.value;
             } catch (error:any) {
                 // Add some context to the error
-                throw new Error(`Cannot find module '${id}': ${error.message}`)
+                throw new Error(`Cannot find module '${moduleId}': ${error.message}`)
             }
-        })
+        });
 
+        // Add require to the global scope
+        context.setProp(context.global, "require", requireFn);
+        requireFn.dispose();
+ 
         // Add require to the global scope
         context.setProp(context.global, "require", requireFn)
         requireFn.dispose()
