@@ -1,537 +1,289 @@
-import { IFileSystem } from '../filesystem';
-import JSZip from 'jszip';
-import { IShell, ShellCommandResult, CommandParsedResult } from './types';
-import { CommandRegistry } from './commands/registry';
-import { CurlCommand } from './commands/curl';
-import { UnzipCommand } from './commands/unzip';
-import { WgetCommand } from './commands/wget';
-import { Process } from '../process';
-interface ShellOptions {
-    oscMode?: boolean;
-    process: Process;
-    env?: Map<string, string>;
+import { Process } from '../../base/process';
+import { Shell } from '../../../shell';
+import { ProcessEvent, ProcessState, ProcessType } from '../../base';
+import { IFileSystem } from '../../../filesystem';
+import { ShellCommandResult } from '../../../shell';
+import { InstallOptions } from 'shell/commands/base';  // Import
+
+interface CommandHistoryEntry {
+    command: string;
+    timestamp: Date;
 }
 
-
-export class Shell implements IShell {
-    private fileSystem: IFileSystem;
-    private currentDirectory: string;
-    private env: Map<string, string>;
-    private commandHistory: string[] = [];
+export class ShellProcess extends Process {
+    private shell: Shell;
+    private prompt: string;
+    private currentLine: string = '';
+    private running: boolean = true;
+    private filteredArgs: string[];
+    private commandHistory: CommandHistoryEntry[] = [];
     private historyIndex: number = -1;
-    private oscMode: boolean = false;
-    private buildInCommands: Map<string, (args: string[]) => Promise<ShellCommandResult>> = new Map();
-    private commandRegistry: CommandRegistry;
-    private process: Process;
 
-    constructor(fileSystem: IFileSystem, options: ShellOptions) {
+    // Add readline state
+    private cursorPosition: number = 0;
+    private lineBuffer: string[] = [];
+
+    private fileSystem: IFileSystem;
+
+    constructor(
+        pid: number,
+        executablePath: string,
+        args: string[],
+        fileSystem: IFileSystem,
+        parentPid?: number,
+        cwd?: string,
+        env?: Map<string, string>
+    ) {
+        super(pid, ProcessType.SHELL, executablePath, args, parentPid,cwd,env);
         this.fileSystem = fileSystem;
-        this.currentDirectory = '/';
-        this.env = options.env || new Map([
-            ['PATH', '/bin:/usr/bin'],
-            ['HOME', '/home'],
-            ['PWD', this.currentDirectory],
-        ]);
-        this.process = options.process;
-        this.oscMode = options.oscMode || false;
-        this.commandRegistry = new CommandRegistry();
-        this.registerAllBuiltInCommands()
-        this.registerAllExternalCommands();
-    }
-    private registerBuiltInCommand(name: string, command: (args: string[]) => Promise<ShellCommandResult>) {
-        this.buildInCommands.set(name, command);
-    }
-    private registerExternalCommand(name: string, commandClass: any) {
-        this.commandRegistry.register(name, commandClass);
-    }
-    private registerAllBuiltInCommands() {
-        this.registerBuiltInCommand('cd', this.cd.bind(this));
-        this.registerBuiltInCommand('ls', this.ls.bind(this));
-        this.registerBuiltInCommand('pwd', this.pwd.bind(this));
-        this.registerBuiltInCommand('cat', this.cat.bind(this));
-        this.registerBuiltInCommand('echo', this.echo.bind(this));
-        this.registerBuiltInCommand('mkdir', this.mkdir.bind(this));
-        this.registerBuiltInCommand('rm', this.rm.bind(this));
-        this.registerBuiltInCommand('rmdir', this.rmdir.bind(this));
-        this.registerBuiltInCommand('touch', this.touch.bind(this));
-    }
-    private registerAllExternalCommands() {
-        this.registerExternalCommand('curl', CurlCommand);
-        this.registerExternalCommand('unzip', UnzipCommand);
-        this.registerExternalCommand('wget', WgetCommand);
+        const oscMode = args.includes('--osc');
+        this.filteredArgs = args.filter(arg => arg !== '--osc');
+
+        this.shell = new Shell(fileSystem, { oscMode, process: this,env: this.env });
+        this.prompt = oscMode ? '\x1b[1;32m$\x1b[0m ' : '$ ';
     }
 
-    private formatOscOutput(type: string, content: string): string {
-        if (!this.oscMode) return content;
-
-        switch (type) {
-            case 'file':
-                return `\x1b[34m${content}\x1b[0m`;
-            case 'directory':
-                return `\x1b[1;34m${content}/\x1b[0m`;
-            case 'executable':
-                return `\x1b[32m${content}*\x1b[0m`;
-            case 'error':
-                return `\x1b[31m${content}\x1b[0m`;
-            case 'success':
-                return `\x1b[32m${content}\x1b[0m`;
-            case 'info':
-                return `\x1b[90m${content}\x1b[0m`;
-            case 'warning':
-                return `\x1b[33m${content}\x1b[0m`;
-            case 'path':
-                return `\x1b[36m${content}\x1b[0m`;
-            case 'command':
-                return `\x1b[1;35m${content}\x1b[0m`;
-            default:
-                return content;
-        }
-    }
-
-    private getFileType(path: string): string {
+    protected async execute(): Promise<void> {
         try {
-            if (this.fileSystem.isDirectory(path)) {
-                return 'directory';
+            // Handle initial command if provided in args
+            if (this.filteredArgs.length > 0) {
+                const result = await this.executeCommand(this.filteredArgs.join(' '));
+                if (result.stdout) {
+                    this.emitOutput(result.stdout + '\n');
+                }
+                if (result.stderr) {
+                    this.emitError(result.stderr + '\n');
+                }
+                this._exitCode = result.exitCode;
+                return;
             }
-            if (path.endsWith('.js')) {
-                return 'executable';
+
+            // Initial prompt
+            this.emitOutput(this.prompt);
+
+            // Interactive shell loop
+            while (this.running && this.state === ProcessState.RUNNING) {
+                const input = await this.readInput();
+                await this.handleInput(input);
             }
-            return 'file';
-        } catch {
-            return 'file';
+        } catch (error: any) {
+            this.emitError(`Shell error: ${error.message}\n`);
+            throw error;
         }
     }
 
-    private success(stdout: string = '', type: string = 'success'): ShellCommandResult {
-        return {
-            stdout: this.oscMode ? this.formatOscOutput(type, stdout) : stdout,
-            stderr: '',
-            exitCode: 0
-        };
+    protected async onTerminate(): Promise<void> {
+        this.running = false;
+        this.emitOutput('\nShell terminated.\n');
     }
 
-    private failure(stderr: string): ShellCommandResult {
-        return {
-            stdout: '',
-            stderr: this.oscMode ? this.formatOscOutput('error', stderr) : stderr,
-            exitCode: 1
-        };
-    }
+    private async handleInput(input: string): Promise<void> {
 
-    private formatCommandOutput(command: string, output: string): string {
-        if (!this.oscMode) return output;
+        // Detect paste by checking if input is multiple characters 
+        // and doesn't start with an escape sequence
+        if (input.length > 1 && !input.startsWith('\x1b')) {
+            await this.handlePaste(input);
+            return;
+        }
 
-        // Format specific command outputs
-        switch (command) {
-            case 'ls':
-                return output.split('\n').map(entry => {
-                    if (!entry.trim()) return entry;
-                    const type = this.getFileType(this.resolvePath(entry));
-                    return this.formatOscOutput(type, entry);
-                }).join('\n');
+        switch (input) {
+            case '\r': // Enter
+                await this.handleEnterKey();
+                break;
 
-            case 'pwd':
-                return this.formatOscOutput('path', output);
+            case '\x7F': // Backspace
+            case '\b':
+                this.handleBackspace();
+                break;
 
-            case 'echo':
-                return this.formatOscOutput('info', output);
+            case '\x1b[A': // Up arrow
+                this.handleUpArrow();
+                break;
 
-            case 'cat':
-                // Attempt to detect and color code content
-                if (output.startsWith('{') || output.startsWith('[')) {
-                    try {
-                        JSON.parse(output);
-                        return this.formatOscOutput('info', output);
-                    } catch { }
-                }
-                return output;
+            case '\x1b[B': // Down arrow
+                this.handleDownArrow();
+                break;
 
-            case 'mkdir':
-            case 'touch':
-            case 'rm':
-            case 'rmdir':
-            case 'cp':
-            case 'mv':
-                return this.formatOscOutput('success', output);
+            case '\x1b[C': // Right arrow
+                this.handleRightArrow();
+                break;
+
+            case '\x1b[D': // Left arrow
+                this.handleLeftArrow();
+                break;
+
+            case '\x03': // Ctrl+C
+                this.handleCtrlC();
+                break;
+
+            case '\x04': // Ctrl+D
+                this.handleCtrlD();
+                break;
 
             default:
-                return output;
+                if (input.length === 1 && input >= ' ') {
+                    this.handleCharacterInput(input);
+                }
+                break;
+        }
+    }
+    private async handlePaste(pastedText: string): Promise<void> {
+        // Split the pasted text by lines
+        const lines = pastedText.split(/\r?\n/);
+
+        // Handle first line - insert at cursor position
+        const firstLine = lines[0];
+        const before = this.currentLine.slice(0, this.cursorPosition);
+        const after = this.currentLine.slice(this.cursorPosition);
+
+        this.currentLine = before + firstLine + after;
+        this.cursorPosition += firstLine.length;
+
+        // Update display for first line
+        this.emitOutput(firstLine);
+        if (after) {
+            // Redraw rest of the line
+            this.emitOutput(after);
+            // Move cursor back to position
+            this.emitOutput(`\x1b[${after.length}D`);
+        }
+
+        // If there are multiple lines, handle them one by one
+        if (lines.length > 1) {
+            for (let i = 1; i < lines.length; i++) {
+                // Execute current line
+                await this.handleEnterKey();
+
+                // Handle next line
+                const line = lines[i];
+                if (line.length > 0) {
+                    this.currentLine = line;
+                    this.cursorPosition = line.length;
+                    this.emitOutput(line);
+                }
+            }
+        }
+    }
+    private async handleEnterKey(): Promise<void> {
+        this.emitOutput('\n');
+
+        const commandLine = this.currentLine.trim();
+        if (commandLine) {
+            // Add to history
+            this.commandHistory.push({
+                command: commandLine,
+                timestamp: new Date()
+            });
+            this.historyIndex = this.commandHistory.length;
+
+            // Execute command
+            const result = await this.executeCommand(commandLine);
+
+            // Handle output
+            if (result.stdout) {
+                this.emitOutput(result.stdout);
+                if (!result.stdout.endsWith('\n')) {
+                    this.emitOutput('\n');
+                }
+            }
+            if (result.stderr) {
+                this.emitError(result.stderr);
+                if (!result.stderr.endsWith('\n')) {
+                    this.emitOutput('\n');
+                }
+            }
+        }
+
+        // Reset current line and show new prompt
+        this.currentLine = '';
+        this.cursorPosition = 0;
+        this.emitOutput(this.prompt);
+    }
+
+    private handleBackspace(): void {
+        if (this.cursorPosition > 0) {
+            const before = this.currentLine.slice(0, this.cursorPosition - 1);
+            const after = this.currentLine.slice(this.cursorPosition);
+            this.currentLine = before + after;
+            this.cursorPosition--;
+
+            // Update display
+            this.emitOutput('\b \b'); // Move back, clear character, move back
+            if (after) {
+                // Redraw rest of the line
+                this.emitOutput(after + '\x1b[K'); // Clear to end of line
+                // Move cursor back to position
+                this.emitOutput(`\x1b[${after.length}D`);
+            }
         }
     }
 
-    // Add these new methods for history management
-    getNextCommand(): string {
-        if (this.historyIndex < this.commandHistory.length - 1) {
-            this.historyIndex++;
-            return this.commandHistory[this.historyIndex];
-        }
-        this.historyIndex = this.commandHistory.length;
-        return '';
-    }
-
-    getPreviousCommand(): string {
+    private handleUpArrow(): void {
         if (this.historyIndex > 0) {
             this.historyIndex--;
-            return this.commandHistory[this.historyIndex];
-        } else if (this.historyIndex === 0) {
-            return this.commandHistory[0];
-        }
-        return '';
-    }
-
-    getCurrentHistoryIndex(): number {
-        return this.historyIndex;
-    }
-
-    getHistoryLength(): number {
-        return this.commandHistory.length;
-    }
-    getWorkingDirectory(): string {
-        return this.currentDirectory;
-    }
-
-    setWorkingDirectory(path: string): void {
-        const resolvedPath = this.resolvePath(path);
-        if (!this.fileSystem.isDirectory(resolvedPath)) {
-            throw new Error(`Directory not found: ${path}`);
-        }
-        this.currentDirectory = resolvedPath;
-        this.env.set('PWD', resolvedPath);
-    }
-    hasCommand(command: string): boolean {
-        return this.buildInCommands.has(command)||this.commandRegistry.has(command);
-    }
-
-    private resolvePath(path: string): string {
-        if (path.startsWith('/')) {
-            return path;
-        }
-        return `${this.currentDirectory}/${path}`.replace(/\/+/g, '/');
-    }
-
-    private parseCommand(args: string[]): CommandParsedResult {
-        const result: CommandParsedResult = {
-            command: '',
-            args: [],
-            redirects: []
-        };
-
-        let i = 0;
-        while (i < args.length) {
-            const arg = args[i];
-
-            if (arg === '>' || arg === '>>') {
-                if (i + 1 >= args.length) {
-                    throw new Error(`Syntax error: missing file for redirection ${arg}`);
-                }
-                result.redirects.push({
-                    type: arg as ('>' | '>>'),
-                    file: args[i + 1]
-                });
-                i += 2;
-            } else {
-                if (!result.command) {
-                    result.command = arg;
-                } else {
-                    result.args.push(arg);
-                }
-                i++;
-            }
-        }
-
-        return result;
-    }
-
-    private handleRedirection(output: string, redirects: CommandParsedResult['redirects']): void {
-        for (const redirect of redirects) {
-            const filePath = this.resolvePath(redirect.file);
-
-            try {
-                if (redirect.type === '>>') {
-                    // Append to file
-                    const existingContent = this.fileSystem.readFile(filePath) || '';
-                    this.fileSystem.writeFile(filePath, existingContent + output);
-                } else {
-                    // Overwrite file
-                    this.fileSystem.writeFile(filePath, output);
-                }
-            } catch (error: any) {
-                throw new Error(`Failed to redirect to ${redirect.file}: ${error.message}`);
-            }
+            this.updateInputLine(this.commandHistory[this.historyIndex].command);
         }
     }
 
-    // Modified execute method to include history
-    async execute(command: string, args: string[]): Promise<ShellCommandResult> {
-        try {
-            if (!command) {
-                return this.success();
-            }
-            this.commandHistory.push(command);
-
-            // Parse command and redirections
-            const parsedCommand = this.parseCommand([command, ...args]);
-
-            // Execute the actual command
-            const result = await this.executeCommand(
-                parsedCommand.command,
-                parsedCommand.args
-            );
-
-
-            // Handle redirections
-            if (result.exitCode === 0 && parsedCommand.redirects.length > 0) {
-                try {
-                    this.handleRedirection(result.stdout, parsedCommand.redirects);
-                    result.stdout = '';
-                } catch (error: any) {
-                    let ret = {
-                        stdout: '',
-                        stderr: error.message,
-                        exitCode: 1
-                    };
-                    if (this.oscMode && ret.stderr) {
-                        ret.stderr = this.formatOscOutput('error', ret.stderr);
-                    }
-                    return ret;
-                }
-            }
-
-            // Format output
-            if (result.exitCode === 0 && result.stdout) {
-                result.stdout = this.formatCommandOutput(command, result.stdout);
-            }
-            if (this.oscMode && result.stderr) {
-                result.stderr = this.formatOscOutput('error', result.stderr);
-            }
-
-            return result;
-        } catch (error: any) {
-            return this.failure(error.message);
+    private handleDownArrow(): void {
+        if (this.historyIndex < this.commandHistory.length - 1) {
+            this.historyIndex++;
+            this.updateInputLine(this.commandHistory[this.historyIndex].command);
+        } else {
+            this.historyIndex = this.commandHistory.length;
+            this.updateInputLine('');
         }
     }
 
-    private async executeBuiltin(command: string, args: string[]): Promise<ShellCommandResult> {
-        switch (command) {
-            case 'ls':
-                return this.ls(args);
-            case 'mkdir':
-                return this.mkdir(args);
-            case 'rm':
-                return this.rm(args);
-            case 'rmdir':
-                return this.rmdir(args);
-            case 'touch':
-                return this.touch(args);
-            case 'pwd':
-                return this.pwd();
-            case 'cd':
-                return this.cd(args);
-            case 'echo':
-                return this.echo(args);
-            case 'cat':
-                return this.cat(args);
-            case 'cp':
-                return this.cp(args);
-            case 'mv':
-                return this.mv(args);
-            // case 'env':
-            //     return this.env_(args);
-            default:
-                return {
-                    stdout: '',
-                    stderr: `Command not found: ${command}`,
-                    exitCode: 127
-                };
+    private handleLeftArrow(): void {
+        if (this.cursorPosition > 0) {
+            this.cursorPosition--;
+            this.emitOutput('\x1b[D');
         }
     }
 
-    // Built-in command implementations
-    private async ls(args: string[]): Promise<ShellCommandResult> {
-        try {
-            const path = args[0] || this.currentDirectory;
-            const resolvedPath = this.resolvePath(path);
-            const entries = this.fileSystem.listDirectory(resolvedPath);
-            console.log(entries);
-
-            return this.success(entries.join('\n'));
-        } catch (error: any) {
-            return this.failure(error.message);
+    private handleRightArrow(): void {
+        if (this.cursorPosition < this.currentLine.length) {
+            this.cursorPosition++;
+            this.emitOutput('\x1b[C');
         }
     }
 
-    private async cat(args: string[]): Promise<ShellCommandResult> {
-        if (args.length === 0) {
-            return this.failure('No file specified');
-        }
-        try {
-            const content = this.fileSystem.readFile(this.resolvePath(args[0]));
-            if (content === undefined) {
-                return this.failure(`File not found: ${args[0]}`);
-            }
-            return this.success(content);
-        } catch (error: any) {
-            return this.failure(error.message);
+    private handleCtrlC(): void {
+        this.currentLine = '';
+        this.cursorPosition = 0;
+        this.emitOutput('^C\n' + this.prompt);
+    }
+
+    private handleCtrlD(): void {
+        if (this.currentLine.length === 0) {
+            this.emitOutput('exit\n');
+            this.running = false;
+            this._exitCode = 0;
         }
     }
 
-    private async mkdir(args: string[]): Promise<ShellCommandResult> {
-        if (args.length === 0) {
-            return this.failure('No directory specified');
-        }
-        try {
-            this.fileSystem.createDirectory(this.resolvePath(args[0]));
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
+    private handleCharacterInput(char: string): void {
+        // Insert character at cursor position
+        const before = this.currentLine.slice(0, this.cursorPosition);
+        const after = this.currentLine.slice(this.cursorPosition);
+        this.currentLine = before + char + after;
+        this.cursorPosition++;
+
+        // Update display
+        this.emitOutput(char);
+        if (after) {
+            // Redraw rest of the line
+            this.emitOutput(after);
+            // Move cursor back to position
+            this.emitOutput(`\x1b[${after.length}D`);
         }
     }
 
-    private async rm(args: string[]): Promise<ShellCommandResult> {
-        if (args.length === 0) {
-            return this.failure('No file specified');
-        }
-        try {
-            const recursive = args.includes('-r') || args.includes('-rf');
-            const files = args.filter(arg => !arg.startsWith('-'));
-
-            for (const file of files) {
-                this.fileSystem.deleteFile(this.resolvePath(file), recursive);
-            }
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
-        }
-    }
-
-    private async rmdir(args: string[]): Promise<ShellCommandResult> {
-        if (args.length === 0) {
-            return this.failure('No directory specified');
-        }
-        try {
-            this.fileSystem.deleteDirectory(this.resolvePath(args[0]));
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
-        }
-    }
-
-    private async touch(args: string[]): Promise<ShellCommandResult> {
-        if (args.length === 0) {
-            return this.failure('No file specified');
-        }
-        try {
-            this.fileSystem.writeFile(this.resolvePath(args[0]), '');
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
-        }
-    }
-
-    private async pwd(): Promise<ShellCommandResult> {
-        return this.success(this.currentDirectory);
-    }
-
-    private async cd(args: string[]): Promise<ShellCommandResult> {
-        try {
-            const path = args[0] || '/';
-            const newPath = this.resolvePath(path);
-            if (!this.fileSystem.isDirectory(newPath)) {
-                return this.failure(`Directory not found: ${path}`);
-            }
-            this.currentDirectory = newPath;
-            this.env.set('PWD', newPath);
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
-        }
-    }
-
-    private async echo(args: string[]): Promise<ShellCommandResult> {
-        return this.success(args.join(' ') + '\n');
-    }
-
-    private async cp(args: string[]): Promise<ShellCommandResult> {
-        if (args.length < 2) {
-            return this.failure('Source and destination required');
-        }
-        try {
-            const [src, dest] = args;
-            const content = this.fileSystem.readFile(this.resolvePath(src));
-            if (content === undefined) {
-                return this.failure(`Source file not found: ${src}`);
-            }
-            this.fileSystem.writeFile(this.resolvePath(dest), content);
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
-        }
-    }
-
-    private async mv(args: string[]): Promise<ShellCommandResult> {
-        if (args.length < 2) {
-            return this.failure('Source and destination required');
-        }
-        try {
-            const [src, dest] = args;
-            const content = this.fileSystem.readFile(this.resolvePath(src));
-            if (content === undefined) {
-                return this.failure(`Source file not found: ${src}`);
-            }
-            this.fileSystem.writeFile(this.resolvePath(dest), content);
-            this.fileSystem.deleteFile(this.resolvePath(src));
-            return this.success();
-        } catch (error: any) {
-            return this.failure(error.message);
-        }
-    }
-
-    private async executeCommand(command: string, args: string[]): Promise<ShellCommandResult> {
-        // // Handle node command specially
-        // if (command === 'node') {
-        //     if (args.length === 0) {
-        //         return this.failure('No JavaScript file specified');
-        //     }
-        //     // return this.executeJavaScriptProcess(args[0], args.slice(1));
-        // }
-        // check if the command is a built-in command
-        if (this.buildInCommands.has(command)) {
-            return this.buildInCommands.get(command)!(args);
-        }
-        if (this.commandRegistry.has(command)) {
-            let commandClass =this.commandRegistry.get(command)!
-            let commandObject = new commandClass({ 
-                cwd: this.currentDirectory, 
-                fileSystem: this.fileSystem, 
-                env: this.env,
-                process: this.process
-             });
-            return commandObject.execute(args);
-        }
-        // // check if the command is in env PATH
-        // let PATH= this.env.get('PATH');
-        // if (PATH) {
-        //     const paths = PATH.split(':');
-        //     for (const path of paths) {
-        //         const executablePath = this.fileSystem.resolvePath(command,path);
-        //         if (this.fileSystem.fileExists(executablePath)) {
-        //             return new Promise((resolve) => {
-        //                 this.emit(ProcessEvent.SPAWN_CHILD, {
-        //                     payload: {
-        //                         executable: interpreterName,
-        //                         args,
-        //                         cwd: this.cwd
-        //                     },
-        //                     callback: resolve
-        //                 });
-        //             });
-        //         }
-        //     }
-        // }
-        // // check for shebang
-
-
-        // Handle built-in commands as before
-        return this.executeBuiltin(command, args);
-    }
-}
+    private updateInputLine(newLine: string): void {
+        // Clear current line
+        this.emitOutput('\r\x1b[K');
+        // Write prompt and new line
+        this.emitOutput(this.prompt + newLine);
+        this.currentLine = newLine;
+        this.cursorPosition = newLine.
