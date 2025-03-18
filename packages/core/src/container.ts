@@ -75,7 +75,12 @@ export class OpenWebContainer {
             console.log('[Container]', ...args);
         }
     }
-
+    async loadPackage(pkg: PackageMetadata): Promise<void> {
+        return this.fileSystem.loadPackage(pkg);
+    }
+    async loadNodeModules(modules:Record<string,string>):Promise<void>{
+        return this.fileSystem.loadNodeModules(modules)
+    }
     /**
      * Network Operations
      */

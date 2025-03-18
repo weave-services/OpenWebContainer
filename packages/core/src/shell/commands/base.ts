@@ -10,6 +10,12 @@ export interface CommandOptions {
     process: Process;
 }
 
+export interface InstallOptions {
+    global?: boolean;
+    save?: boolean;
+    saveDev?: boolean;
+}
+
 export interface CommandHelp {
     name: string;
     description: string;
