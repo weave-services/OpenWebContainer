@@ -18,10 +18,10 @@ export default function Terminal({ onCommand, output }: TerminalProps) {
 
 		const term = new XTerm({
 			cursorBlink: true,
-			fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+			fontFamily: var(--font-jetbrains-mono), 'ui-monospace', 'monospace',
 			fontSize: 14,
 			theme: {
-				background: "#1e1e1e",
+				background: "black",
 			},
 			convertEol: true,
 			allowTransparency: true,
