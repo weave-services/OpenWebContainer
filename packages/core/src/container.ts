@@ -383,7 +383,7 @@ export class OpenWebContainer {
 
 
     /**
-     * Container Lifecycle
+     * WebContainer Object Lifecycle
      */
     async dispose(): Promise<void> {
         this.debugLog('Disposing container');
